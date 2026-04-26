@@ -47,17 +47,22 @@ export class AirtableClient {
 
     do {
       const url = `${this.baseUrl()}/${tableId}?${buildQS(params, offset)}`;
-      const res = await fetch(url, {
-        headers: this.headers(),
-        signal:  AbortSignal.timeout(this.timeoutMs),
-      });
-      if (!res.ok) {
-        throw new Error(`Airtable fetch [${tableId}]: ${res.status} ${await res.text()}`);
+      let res: Response;
+      try {
+        res = await this.request(url);
+      } catch (e) {
+        throw new Error(`Airtable fetch [${tableId}]: ${(e as Error).message}`);
       }
       const data = await res.json() as AirtableListResponse;
       for (const r of data.records) {
-        const fields = schema.parse(r.fields);
-        out.push({ id: r.id, fields });
+        const result = schema.safeParse(r.fields);
+        if (!result.success) {
+          const issue = result.error.issues[0];
+          throw new Error(
+            `Airtable schema mismatch [${tableId}/${r.id}] at ${issue?.path.join('.')}: ${issue?.message}`,
+          );
+        }
+        out.push({ id: r.id, fields: result.data });
       }
       offset = data.offset;
     } while (offset);
@@ -74,5 +79,49 @@ export class AirtableClient {
       'Authorization': `Bearer ${this.env.AIRTABLE_TOKEN}`,
       'Content-Type':  'application/json',
     };
+  }
+
+  private async request(url: string): Promise<Response> {
+    let lastErr: unknown;
+    for (let attempt = 0; attempt <= this.retries; attempt++) {
+      try {
+        const res = await fetch(url, {
+          headers: this.headers(),
+          signal:  AbortSignal.timeout(this.timeoutMs),
+        });
+        if (res.ok) return res;
+        if (res.status >= 500) {
+          lastErr = new Error(`HTTP ${res.status}: ${await res.text()}`);
+          if (attempt < this.retries) {
+            await this.sleep(this.backoffMs(attempt));
+            continue;
+          }
+          throw lastErr;
+        }
+        // 4xx — non-retryable
+        throw new Error(`HTTP ${res.status}: ${await res.text()}`);
+      } catch (e) {
+        // Network errors and AbortError — retryable
+        if (e instanceof TypeError || (e instanceof DOMException && e.name === 'AbortError')) {
+          lastErr = e;
+          if (attempt < this.retries) {
+            await this.sleep(this.backoffMs(attempt));
+            continue;
+          }
+          throw e;
+        }
+        throw e;
+      }
+    }
+    throw lastErr ?? new Error('unreachable');
+  }
+
+  private backoffMs(attempt: number): number {
+    // 200ms, 800ms (4x growth)
+    return 200 * Math.pow(4, attempt);
+  }
+
+  private sleep(ms: number): Promise<void> {
+    return new Promise(r => setTimeout(r, ms));
   }
 }
