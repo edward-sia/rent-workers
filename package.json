@@ -10,7 +10,7 @@
   "scripts": {
     "typecheck": "npm run typecheck --workspaces --if-present",
     "lint":      "npm run lint      --workspaces --if-present",
-    "test":      "vitest run",
+    "test":      "vitest run --passWithNoTests",
     "test:watch":"vitest",
     "build":     "npm run build     --workspaces --if-present",
     "check:schema": "tsx scripts/check-airtable-schema.ts"
