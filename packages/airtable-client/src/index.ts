@@ -1,2 +1,1 @@
-// public surface — populated by later tasks
-export {};
+export { TABLES, type TableId } from './tables';
