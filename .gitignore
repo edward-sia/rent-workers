@@ -11,6 +11,9 @@ worker-configuration.d.ts
 .dev.vars*
 !.dev.vars.example
 
+# worktrees
+.worktrees/
+
 # misc
 *.tsbuildinfo
 *.log
