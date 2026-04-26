@@ -256,4 +256,38 @@ describe('payment wizard', () => {
     expect(await testEnv.SESSION_KV.get(`session:${USER_ID}`)).toBeNull();
     expect(telegramPayloads.some(payload => String(payload.text).includes('no outstanding charges'))).toBe(true);
   });
+
+  it('escapes Airtable labels interpolated into Telegram Markdown messages', async () => {
+    const telegramPayloads = stubTelegram(12);
+    mockTenancy('6B A_B [Tenant](One) *VIP* `code`', 1650, 2);
+    mockCharges([{
+      id: 'recC1',
+      fields: {
+        Label: 'Rent_[May] (unit) *due* `soon`',
+        Balance: 1650,
+        Status: 'Unpaid',
+        'Due Date': '2026-05-01',
+        Tenancy: ['recT1'],
+      },
+    }], 2);
+
+    await telegramUpdate(messageUpdate(70, '/pay'));
+    await telegramUpdate(callbackUpdate(71, 'tenancy:recT1'));
+    await telegramUpdate(callbackUpdate(72, 'charge:recC1'));
+    await telegramUpdate(messageUpdate(73, '1650'));
+    await telegramUpdate(callbackUpdate(74, 'method:Cash'));
+    await telegramUpdate(callbackUpdate(75, 'date:2026-04-26'));
+
+    const markdownPayloads = telegramPayloads
+      .filter(payload => payload.parse_mode === 'Markdown')
+      .map(payload => String(payload.text));
+
+    expect(markdownPayloads.some(text =>
+      text.includes('6B A\\_B \\[Tenant\\]\\(One\\) \\*VIP\\* \\`code\\`'),
+    )).toBe(true);
+    expect(markdownPayloads.some(text =>
+      text.includes('Rent\\_\\[May\\] \\(unit\\) \\*due\\* \\`soon\\`'),
+    )).toBe(true);
+    expect(markdownPayloads.some(text => text.includes('📋 *Confirm Payment*'))).toBe(true);
+  });
 });

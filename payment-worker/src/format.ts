@@ -1,6 +1,12 @@
 export const formatAUD = (n: number): string =>
   `$${n.toFixed(2).replace(/\B(?=(\d{3})+(?!\d))/g, ',')}`;
 
+export const escapeTelegramMarkdown = (value: string): string =>
+  value.replace(/([\\_*[\]()`])/g, '\\$1');
+
+export const escapeTelegramMarkdownUrl = (value: string): string =>
+  value.replace(/\\/g, '\\\\').replace(/\)/g, '\\)');
+
 export function parseAmount(input: string): number | null {
   const cleaned = input.replace(/[$,\s]/g, '');
   if (!/^\d+(\.\d+)?$/.test(cleaned)) return null;
