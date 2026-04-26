@@ -6,7 +6,9 @@
     "deploy": "wrangler deploy",
     "dev": "wrangler dev --test-scheduled",
     "start": "wrangler dev --test-scheduled",
-    "cf-typegen": "wrangler types"
+    "cf-typegen": "wrangler types",
+    "typecheck": "tsc --noEmit",
+    "build":     "wrangler deploy --dry-run --outdir /tmp/$npm_package_name-build"
   },
   "devDependencies": {
     "@types/node": "^25.6.0",
