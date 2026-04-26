@@ -4,3 +4,9 @@ export {
   ChargeSchema,  type Charge,
   PaymentSchema, type Payment,
 } from './schemas';
+export {
+  AirtableClient,
+  type AirtableEnv,
+  type AirtableRecord,
+  type QueryParams,
+} from './client';
