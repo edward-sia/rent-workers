@@ -1,0 +1,16 @@
+{
+  "name": "charge-generator",
+  "main": "src/index.ts",
+  "compatibility_date": "2024-01-01",
+  "triggers": {
+    "crons": ["0 0 15 * *"]
+  },
+  "observability": {
+    "logs": {
+      "enabled": true
+    },
+    "traces": {
+      "enabled": true
+    }
+	}
+}
