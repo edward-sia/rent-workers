@@ -9,4 +9,5 @@ export {
   type AirtableEnv,
   type AirtableRecord,
   type QueryParams,
+  type AirtableClientOptions,
 } from './client';

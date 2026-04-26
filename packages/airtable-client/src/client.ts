@@ -13,13 +13,29 @@ export interface AirtableRecord<T> {
 
 export type QueryParams = Record<string, string | string[]>;
 
+export interface AirtableClientOptions {
+  /** Per-request timeout in ms. Default 10_000. */
+  timeoutMs?: number;
+  /** Max retries on 5xx / network error. Default 2. */
+  retries?: number;
+}
+
 interface AirtableListResponse {
   records: { id: string; fields: unknown }[];
   offset?: string;
 }
 
 export class AirtableClient {
-  constructor(private readonly env: AirtableEnv) {}
+  private readonly timeoutMs: number;
+  private readonly retries:   number;
+
+  constructor(
+    private readonly env: AirtableEnv,
+    opts: AirtableClientOptions = {},
+  ) {
+    this.timeoutMs = opts.timeoutMs ?? 10_000;
+    this.retries   = opts.retries   ?? 2;
+  }
 
   async fetchAll<T>(
     tableId: string,
@@ -31,7 +47,10 @@ export class AirtableClient {
 
     do {
       const url = `${this.baseUrl()}/${tableId}?${buildQS(params, offset)}`;
-      const res = await fetch(url, { headers: this.headers() });
+      const res = await fetch(url, {
+        headers: this.headers(),
+        signal:  AbortSignal.timeout(this.timeoutMs),
+      });
       if (!res.ok) {
         throw new Error(`Airtable fetch [${tableId}]: ${res.status} ${await res.text()}`);
       }
