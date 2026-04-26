@@ -137,7 +137,7 @@ describe('payment wizard', () => {
   it('runs the full payment wizard and creates a Payment record', async () => {
     const telegramPayloads = stubTelegram(12);
     mockTenancy();
-    mockCharges();
+    mockCharges(undefined, 3);
 
     let createBody: any = null;
     fetchMock
@@ -243,6 +243,117 @@ describe('payment wizard', () => {
 
     expect(await testEnv.SESSION_KV.get(`session:${USER_ID}`)).toBeNull();
     expect(telegramPayloads.some(payload => String(payload.text).includes('Session expired'))).toBe(true);
+  });
+
+  it('serializes repeated confirm callbacks and creates only one Payment record', async () => {
+    stubTelegram(4);
+    const confirmationId = crypto.randomUUID();
+    await testEnv.SESSION_KV.put(`session:${USER_ID}`, JSON.stringify({
+      step: 'confirm',
+      tenancyId: 'recT1',
+      tenancyLabel: '6B Sun Peng',
+      chargeId: 'recC1',
+      chargeLabel: '6B Sun Peng 2026-05 Rent',
+      chargeBalance: 1650,
+      amount: 1650,
+      method: 'Cash',
+      date: '2026-04-26',
+      confirmationId,
+    }), { expirationTtl: 3600 });
+    mockCharges([{
+      id: 'recC1',
+      fields: {
+        Label: '6B Sun Peng 2026-05 Rent',
+        Balance: 1650,
+        Status: 'Unpaid',
+        'Due Date': '2026-05-01',
+        Tenancy: ['recT1'],
+      },
+    }], 1);
+
+    let createCount = 0;
+    fetchMock
+      .get(AIRTABLE_ORIGIN)
+      .intercept({ path: `/v0/appTEST/${PAYMENTS}`, method: 'POST' })
+      .reply(() => {
+        createCount++;
+        return {
+          statusCode: 200,
+          data: {
+            id: `recP${createCount}`,
+            fields: {
+              Label: 'Sun Peng 2026-04-26 $1,650.00',
+              Charge: ['recC1'],
+              Amount: 1650,
+              'Paid Date': '2026-04-26',
+              Method: 'Cash',
+            },
+          },
+        };
+      })
+      .times(2);
+
+    await Promise.all([
+      telegramUpdate(callbackUpdate(51, 'confirm:yes')),
+      telegramUpdate(callbackUpdate(52, 'confirm:yes')),
+    ]);
+
+    expect(createCount).toBe(1);
+  });
+
+  it('rejects confirmation when the latest charge state is already paid', async () => {
+    const telegramPayloads = stubTelegram(2);
+    const confirmationId = crypto.randomUUID();
+    await testEnv.SESSION_KV.put(`session:${USER_ID}`, JSON.stringify({
+      step: 'confirm',
+      tenancyId: 'recT1',
+      tenancyLabel: '6B Sun Peng',
+      chargeId: 'recC1',
+      chargeLabel: '6B Sun Peng 2026-05 Rent',
+      chargeBalance: 1650,
+      amount: 1650,
+      method: 'Cash',
+      date: '2026-04-26',
+      confirmationId,
+    }), { expirationTtl: 3600 });
+    mockCharges([{
+      id: 'recC1',
+      fields: {
+        Label: '6B Sun Peng 2026-05 Rent',
+        Balance: 0,
+        Status: 'Paid',
+        'Due Date': '2026-05-01',
+        Tenancy: ['recT1'],
+      },
+    }], 1);
+
+    let createCount = 0;
+    fetchMock
+      .get(AIRTABLE_ORIGIN)
+      .intercept({ path: `/v0/appTEST/${PAYMENTS}`, method: 'POST' })
+      .reply(() => {
+        createCount++;
+        return {
+          statusCode: 200,
+          data: {
+            id: 'recPStale',
+            fields: {
+              Label: 'Sun Peng 2026-04-26 $1,650.00',
+              Charge: ['recC1'],
+              Amount: 1650,
+              'Paid Date': '2026-04-26',
+              Method: 'Cash',
+            },
+          },
+        };
+      });
+
+    await telegramUpdate(callbackUpdate(53, 'confirm:yes'));
+
+    expect(createCount).toBe(0);
+    expect(telegramPayloads.map(payload => String(payload.text))).toContainEqual(
+      expect.stringContaining('no longer has an outstanding balance'),
+    );
   });
 
   it('does not advance to charge selection when the tenant has no outstanding charges', async () => {

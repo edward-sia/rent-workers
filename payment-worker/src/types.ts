@@ -1,3 +1,5 @@
+import type { PaymentConfirmLock } from './payment-confirm-lock';
+
 // ── Cloudflare Worker env bindings ───────────────────────
 export interface Env {
   TELEGRAM_BOT_TOKEN: string;   // from @BotFather
@@ -6,6 +8,7 @@ export interface Env {
   AIRTABLE_BASE_ID: string;    // app6He8xRaUzNBTDl
   AUTHORIZED_USER_ID: string;  // your Telegram numeric user ID
   SESSION_KV: KVNamespace;
+  PAYMENT_CONFIRM_LOCK: DurableObjectNamespace<PaymentConfirmLock>;
 }
 
 // ── Wizard session — persisted in KV between Telegram messages ──
@@ -28,4 +31,5 @@ export interface WizardSession {
   amount?: number;
   method?: string;          // "Cash" | "Bank Transfer"
   date?: string;            // YYYY-MM-DD
+  confirmationId?: string;
 }
