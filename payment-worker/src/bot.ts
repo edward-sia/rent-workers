@@ -1,6 +1,14 @@
 import { AirtableClient, ChargeSchema, PaymentSchema, TABLES, TenancySchema } from '@rent/airtable-client';
 import { Bot, InlineKeyboard, type Context } from 'grammy';
-import { formatAUD, parseAmount, parseDate, todayISO, yesterdayISO } from './format';
+import {
+  escapeTelegramMarkdown,
+  escapeTelegramMarkdownUrl,
+  formatAUD,
+  parseAmount,
+  parseDate,
+  todayISO,
+  yesterdayISO,
+} from './format';
 import { clearSession, getSession, setSession } from './session';
 import type { Env, WizardSession } from './types';
 
@@ -25,12 +33,12 @@ function confirmationText(session: WizardSession): string {
   const remaining = Math.max(0, (session.chargeBalance ?? 0) - (session.amount ?? 0));
   return (
     `📋 *Confirm Payment*\n\n` +
-    `👤 *Tenant:*   ${session.tenancyLabel}\n` +
-    `🧾 *Charge:*   ${session.chargeLabel}\n` +
-    `💰 *Amount:*   ${formatAUD(session.amount ?? 0)}\n` +
-    `💳 *Method:*   ${session.method}\n` +
-    `📅 *Date:*     ${session.date}\n` +
-    `📊 *Outstanding after:* ${formatAUD(remaining)}`
+    `👤 *Tenant:*   ${escapeTelegramMarkdown(String(session.tenancyLabel))}\n` +
+    `🧾 *Charge:*   ${escapeTelegramMarkdown(String(session.chargeLabel))}\n` +
+    `💰 *Amount:*   ${escapeTelegramMarkdown(formatAUD(session.amount ?? 0))}\n` +
+    `💳 *Method:*   ${escapeTelegramMarkdown(String(session.method))}\n` +
+    `📅 *Date:*     ${escapeTelegramMarkdown(String(session.date))}\n` +
+    `📊 *Outstanding after:* ${escapeTelegramMarkdown(formatAUD(remaining))}`
   );
 }
 
@@ -125,7 +133,7 @@ export function createBot(env: Env): Bot {
 
     if (charges.length === 0) {
       await ctx.editMessageText(
-        `✅ *${tenancyLabel}* has no outstanding charges.`,
+        `✅ *${escapeTelegramMarkdown(tenancyLabel)}* has no outstanding charges.`,
         { parse_mode: 'Markdown' },
       );
       return;
@@ -147,7 +155,7 @@ export function createBot(env: Env): Bot {
     }, env.SESSION_KV);
 
     await ctx.editMessageText(
-      `💳 *${tenancyLabel}* — select charge to pay:`,
+      `💳 *${escapeTelegramMarkdown(tenancyLabel)}* — select charge to pay:`,
       { parse_mode: 'Markdown', reply_markup: keyboard },
     );
   });
@@ -184,8 +192,8 @@ export function createBot(env: Env): Bot {
     }, env.SESSION_KV);
 
     await ctx.editMessageText(
-      `💰 *${chargeLabel}*\n` +
-      `Outstanding: *${formatAUD(chargeBalance)}*\n\n` +
+      `💰 *${escapeTelegramMarkdown(chargeLabel)}*\n` +
+      `Outstanding: *${escapeTelegramMarkdown(formatAUD(chargeBalance))}*\n\n` +
       'Reply with the amount paid:',
       { parse_mode: 'Markdown' },
     );
@@ -207,7 +215,7 @@ export function createBot(env: Env): Bot {
       .text('✏️ Enter date manually', 'date:manual').row();
 
     await ctx.editMessageText(
-      `Method: *${method}*\n\nPayment date?`,
+      `Method: *${escapeTelegramMarkdown(method)}*\n\nPayment date?`,
       { parse_mode: 'Markdown', reply_markup: keyboard },
     );
   });
@@ -267,12 +275,12 @@ export function createBot(env: Env): Bot {
 
       await ctx.editMessageText(
         `✅ *Payment recorded!*\n\n` +
-        `👤 ${session.tenancyLabel}\n` +
-        `🧾 ${session.chargeLabel}\n` +
-        `💰 ${formatAUD(session.amount)} — ${session.method}\n` +
-        `📅 ${session.date}\n` +
-        `📊 Charge outstanding after: *${formatAUD(remaining)}*\n\n` +
-        `🔗 [View in Airtable](${airtableUrl})`,
+        `👤 ${escapeTelegramMarkdown(String(session.tenancyLabel))}\n` +
+        `🧾 ${escapeTelegramMarkdown(String(session.chargeLabel))}\n` +
+        `💰 ${escapeTelegramMarkdown(formatAUD(session.amount))} — ${escapeTelegramMarkdown(session.method)}\n` +
+        `📅 ${escapeTelegramMarkdown(session.date)}\n` +
+        `📊 Charge outstanding after: *${escapeTelegramMarkdown(formatAUD(remaining))}*\n\n` +
+        `🔗 [View in Airtable](${escapeTelegramMarkdownUrl(airtableUrl)})`,
         { parse_mode: 'Markdown' },
       );
 
@@ -280,7 +288,7 @@ export function createBot(env: Env): Bot {
     } catch (e) {
       const msg = (e as Error).message;
       console.error(`[payment-bot] create failed: ${msg}`);
-      await ctx.editMessageText(`❌ Failed to save payment:\n\`${msg}\``, {
+      await ctx.editMessageText(`❌ Failed to save payment:\n\`${escapeTelegramMarkdown(msg)}\``, {
         parse_mode: 'Markdown',
       });
       await clearSession(userId, env.SESSION_KV);
@@ -314,7 +322,7 @@ export function createBot(env: Env): Bot {
         .text('🏦 Bank Transfer', `method:${METHOD_BANK_TRANSFER}`);
 
       await ctx.reply(
-        `Amount: *${formatAUD(amount)}*\n\nHow was it paid?`,
+        `Amount: *${escapeTelegramMarkdown(formatAUD(amount))}*\n\nHow was it paid?`,
         { parse_mode: 'Markdown', reply_markup: keyboard },
       );
       return;

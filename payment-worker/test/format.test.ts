@@ -1,5 +1,5 @@
 import { afterEach, describe, expect, it, vi } from 'vitest';
-import { formatAUD, parseAmount, parseDate, todayISO, yesterdayISO } from '../src/format';
+import { escapeTelegramMarkdown, formatAUD, parseAmount, parseDate, todayISO, yesterdayISO } from '../src/format';
 
 describe('formatAUD', () => {
   it('formats with $ and 2 dp', () => {
@@ -8,6 +8,12 @@ describe('formatAUD', () => {
 
   it('groups thousands', () => {
     expect(formatAUD(1234567.5)).toBe('$1,234,567.50');
+  });
+});
+
+describe('escapeTelegramMarkdown', () => {
+  it('escapes Markdown control characters in dynamic values', () => {
+    expect(escapeTelegramMarkdown('A_B [C](D) *E* `F` \\G')).toBe('A\\_B \\[C\\]\\(D\\) \\*E\\* \\`F\\` \\\\G');
   });
 });
 
