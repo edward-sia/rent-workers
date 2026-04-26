@@ -78,3 +78,17 @@ describe('AirtableClient.fetchAll — happy path', () => {
     expect(calls).toBe(2);
   });
 });
+
+describe('AirtableClient.fetchAll — schema validation', () => {
+  it('throws an error mentioning the field path on parse failure', async () => {
+    vi.stubGlobal('fetch', vi.fn(async () => new Response(
+      JSON.stringify({ records: [{ id: 'rec1', fields: { Name: 42 } }] }),
+      { status: 200 },
+    )));
+
+    const client = new AirtableClient(env);
+    await expect(
+      client.fetchAll('tbl1', TableSchema),
+    ).rejects.toThrow(/Name/);
+  });
+});
