@@ -12,9 +12,30 @@
 
 ---
 
+## Implementation progress
+
+Updated: 2026-04-26
+
+| Phase | Status | Notes |
+|---|---|---|
+| Phase 1 — Monorepo skeleton | Complete | Workspaces root, shared TS config, and Vitest workspace are in place. |
+| Phase 2 — Shared `@rent/airtable-client` | Complete | Shared Airtable client, schemas, retries, timeouts, and tests are in place. |
+| Phase 3 — Migrate `charge-generator` | Complete | `charge-generator` uses `@rent/airtable-client`, `/run` requires `RUN_TOKEN`, and unit/integration tests cover scheduled and fetch flows. |
+| Phase 4 — Migrate `payment-worker` | Next | Payment worker docs should be updated as each task lands. |
+
+## Documentation lane
+
+Documentation is no longer deferred entirely to Phase 6. From Phase 4 onward, every task that changes behavior, config, secrets, file layout, commands, or operational steps must include the matching README / `AGENTS.md` update before the task is pushed.
+
+Phase 6 remains as the final documentation sweep, but it should be cleanup rather than the first time docs learn about completed work.
+
+Close each phase with a small docs-sync commit when needed. That commit should update only behavior that has actually landed; do not document future Phase 4/5 secrets, CI workflows, or schema-check behavior before those phases are implemented.
+
+---
+
 ## Notes for the implementing engineer
 
-- The repo is currently `main`-only. Each task's commit goes straight to `main`. Make commits small.
+- Active implementation is on the `productionize-workers` branch/worktree. Keep commits small and push stable phase checkpoints to GitHub.
 - Both workers must remain deployable at the end of every task. If a task would break a worker mid-way, the task is sized wrong — split it.
 - Pure-TypeScript tests run on Node via vitest's default pool. Worker-runtime tests (anything that imports `cloudflare:workers` or uses `SELF.scheduled` / `SELF.fetch`) run via `@cloudflare/vitest-pool-workers`. We configure both pools in `vitest.workspace.ts`.
 - `wrangler` reads `compatibility_date` to pick the runtime version. We align both workers to a recent date as part of Phase 5.

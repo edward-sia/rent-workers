@@ -1,124 +1,77 @@
 # charge-generator
 
-Cloudflare Worker that automatically creates monthly rent charge records in Airtable and notifies Discord.
+Cloudflare Worker that creates monthly rent charge records in Airtable and notifies Discord.
+
+## What It Does
+
+Runs on the 15th of each month at midnight UTC and generates rent charges for the following month across all active tenancies. It is idempotent: if a charge already exists for a tenancy and period, that tenancy is skipped.
+
+Manual `/run` requests are protected by a bearer token.
+
+## Flow
+
+```
+Cron fires on the 15th
+  -> Fetch active tenancies from Airtable
+  -> Fetch existing Charges for next month's YYYY-MM period
+  -> Skip already-covered tenancies
+  -> Create missing Charge records
+  -> Post Discord summary
+  -> Log counts/errors to Cloudflare
+```
 
 ## Architecture
 
 ```mermaid
 flowchart TD
-    subgraph Triggers["Triggers"]
-        CRON["⏰ CF Cron\n0 0 15 * *\n(15th of month, UTC midnight)"]
-        HTTP["🌐 HTTP GET /run\n(manual / CI)"]
-    end
-
-    subgraph Worker["charge-generator · Cloudflare Worker · TypeScript"]
-        direction TB
-        GEN["generateCharges()"]
-        DEDUP{"charge already\nexists for period?"}
-        RESOLVE["resolveDueDate()\nDue Day → Start Date day → 1st"]
-        NOTIFY["notifyDiscord()"]
-    end
-
-    subgraph Airtable["Airtable (REST API · HTTPS)"]
-        TEN["Tenancies table\ntblvVmo12VikITRH6"]
-        CHG["Charges table\ntblNCw6ZxspNxiKCu"]
-    end
-
-    DISCORD["💬 Discord Webhook\n(summary embed)"]
-    CFLOGS["📋 CF Observability\n(structured logs + traces)"]
-
-    CRON -->|"scheduled event"| GEN
-    HTTP -->|"fetch event"| GEN
-
-    GEN -->|"GET active tenancies\nfilterByFormula + pagination"| TEN
-    GEN -->|"GET charges for period\ndedup check"| CHG
-    TEN -->|"records"| DEDUP
-    CHG -->|"existing charge IDs"| DEDUP
-    DEDUP -->|"skip"| NOTIFY
-    DEDUP -->|"new tenancy"| RESOLVE
-    RESOLVE -->|"POST new charge record"| CHG
-    GEN --> NOTIFY
-    NOTIFY -->|"POST embed\n✅ created / ⏭ skipped / ❌ errors"| DISCORD
-    GEN -->|"counts log"| CFLOGS
+    CRON["CF Cron: 0 0 15 * *"] --> WORKER["charge-generator Worker"]
+    RUN["GET /run + Bearer RUN_TOKEN"] --> WORKER
+    WORKER --> AUTH["requireBearer()"]
+    WORKER --> GEN["generateCharges()"]
+    GEN --> CLIENT["@rent/airtable-client"]
+    CLIENT --> TEN["Airtable Tenancies"]
+    CLIENT --> CHG["Airtable Charges"]
+    GEN --> DUE["resolveDueDate()"]
+    GEN --> DISCORD["notifyDiscord()"]
 ```
 
-### Technology choices and why
-
-| Layer | Technology | Why |
-|---|---|---|
-| **Runtime** | Cloudflare Workers | Serverless — no server to maintain; built-in cron scheduling; sub-millisecond cold starts; free tier covers monthly frequency |
-| **Language** | TypeScript | Type safety for Airtable field shapes and env bindings; caught at deploy time, not runtime |
-| **Airtable** | REST API (no SDK) | No external dependencies needed; the API is simple enough that a fetch wrapper is ~20 lines |
-| **Notifications** | Discord webhook | Zero-dependency push notification to an existing channel; no bot token or infra required |
-| **Observability** | CF built-in logs + traces | Native to the platform; zero config; survives without a separate logging service |
-
-### Key design decisions and why
-
-| Decision | Why |
-|---|---|
-| **Cron on 15th, charges for next month** | Gives tenants and the property manager ~2 weeks notice before the charge is due on the 1st; avoids generating charges too close to the due date |
-| **Idempotency before creation** | Cron jobs can fire twice (CF edge retries); checking existing charges prevents duplicate billing |
-| **Due Day field overrides Start Date day** | Some tenants negotiate a different payment day than their start date — the override field makes this explicit in Airtable without code changes |
-| **28-day cap on due dates** | February has 28 days; capping prevents `2025-02-30` style invalid dates regardless of tenancy start day |
-| **`buildQS` helper for `fields[]`** | Airtable requires bracket notation (`fields[]=Label&fields[]=Amount`); `URLSearchParams` alone doesn't produce this — the helper handles it cleanly |
-| **Discord failure is non-fatal** | A broken webhook should not mask whether charges were actually created; `notifyDiscord` returns `bool`, errors are logged separately |
-
----
-
-## What it does
-
-Runs on the 15th of each month (UTC midnight) and generates rent charges for the **following** month across all active tenancies. Idempotent — safe to run multiple times, it skips charges that already exist for the target period.
-
-### Flow
-
-```
-Cron fires (15th of month, 00:00 UTC)
-  → Fetch all active tenancies from Airtable
-      (End Date blank OR End Date >= today)
-  → Fetch existing Charges for next month's period (YYYY-MM)
-      (deduplication — skips already-covered tenancies)
-  → For each uncovered tenancy:
-      Resolve due date (Due Day field → Start Date day → 1st as fallback)
-      POST new Charge record to Airtable
-  → POST Discord embed with created / skipped / error summary
-  → Log counts to Cloudflare dashboard
-```
-
-## Airtable schema
+## Airtable Schema
 
 | Table | ID |
 |---|---|
 | Tenancies | `tblvVmo12VikITRH6` |
-| Charges   | `tblNCw6ZxspNxiKCu` |
+| Charges | `tblNCw6ZxspNxiKCu` |
 
-**Tenancy fields read:** `Label`, `Monthly Rent`, `Start Date`, `End Date`, `Due Day`
+Tenancy fields read: `Label`, `Monthly Rent`, `Start Date`, `End Date`, `Due Day`.
 
-**Charge fields written:**
+Charge fields written:
 
 | Field | Value |
 |---|---|
-| Label | `{tenancy label} {YYYY-MM} Rent` |
-| Tenancy | linked record ID |
-| Type | `"Rent"` |
-| Period | `YYYY-MM` |
-| Due Date | resolved from `Due Day` or `Start Date` day (capped at 28) |
-| Amount | tenancy's `Monthly Rent` |
+| `Label` | `{tenancy label} {YYYY-MM} Rent` |
+| `Tenancy` | linked tenancy record ID |
+| `Type` | `Rent` |
+| `Period` | `YYYY-MM` |
+| `Due Date` | `Due Day`, then `Start Date` day, capped at 28 |
+| `Amount` | tenancy `Monthly Rent` |
 
-## Environment variables / secrets
+## Environment Variables / Secrets
 
 | Name | How to set | Description |
 |---|---|---|
-| `AIRTABLE_TOKEN` | `wrangler secret put AIRTABLE_TOKEN` | PAT with `data.records:read` + `data.records:write` |
-| `AIRTABLE_BASE_ID` | `wrangler secret put AIRTABLE_BASE_ID` | Airtable base ID (e.g. `app6He8xRaUzNBTDl`) |
+| `AIRTABLE_TOKEN` | `wrangler secret put AIRTABLE_TOKEN` | PAT with `data.records:read` and `data.records:write` |
+| `AIRTABLE_BASE_ID` | `wrangler secret put AIRTABLE_BASE_ID` | Airtable base ID, for example `app6He8xRaUzNBTDl` |
 | `DISCORD_WEBHOOK_URL` | `wrangler secret put DISCORD_WEBHOOK_URL` | Discord channel webhook URL |
+| `RUN_TOKEN` | `wrangler secret put RUN_TOKEN` | High-entropy bearer token for `/run`; use `openssl rand -hex 32` |
 
 ## Setup
 
 ```bash
 npm install
-wrangler secret put AIRTABLE_TOKEN
-wrangler secret put AIRTABLE_BASE_ID
-wrangler secret put DISCORD_WEBHOOK_URL
+npx wrangler secret put AIRTABLE_TOKEN
+npx wrangler secret put AIRTABLE_BASE_ID
+npx wrangler secret put DISCORD_WEBHOOK_URL
+npx wrangler secret put RUN_TOKEN
 npm run deploy
 ```
 
@@ -126,51 +79,58 @@ npm run deploy
 
 | Command | Purpose |
 |---|---|
-| `npm run dev` | Local dev with `--test-scheduled` flag |
+| `npm run dev` | Local dev with scheduled-test support |
 | `npm run deploy` | Deploy to Cloudflare |
-| `npm run cf-typegen` | Regenerate `worker-configuration.d.ts` from bindings |
+| `npm run cf-typegen` | Regenerate Worker binding types |
+| `npm run typecheck` | Type-check this worker |
+| `npm run build` | Wrangler deploy dry-run |
 
-## Manual trigger
-
-Send a GET request to `/run` on the deployed worker URL:
+From the repo root:
 
 ```bash
-curl https://charge-generator.<your-subdomain>.workers.dev/run
+npm run test -- charge-generator
 ```
 
-Returns `Done — check Discord` on success.
+## Manual Trigger
 
-## Cron schedule
-
+```bash
+curl -H "Authorization: Bearer $RUN_TOKEN" \
+  https://charge-generator.<your-subdomain>.workers.dev/run
 ```
-0 0 15 * *   — midnight UTC on the 15th of every month
-```
 
-Charges are generated for the **next** calendar month (so the 15th of April creates May charges).
+Returns `Done — check Discord` on success and `401` when the bearer is missing, too short, or incorrect.
 
-## Due date logic
+## Testing
 
-1. **`Due Day` field set** (1–28): use that day of the target month
-2. **`Start Date` set**: use the same day-of-month, capped at 28
-3. **Fallback**: 1st of the target month
+Unit tests cover:
 
-The 28-day cap avoids invalid dates in February.
+- `src/due-date.ts`
+- `src/discord.ts`
+- `src/auth.ts`
 
-## Discord notification
+Integration tests run inside `@cloudflare/vitest-pool-workers` and cover:
 
-Posts a colour-coded embed:
-- 🟢 Green — charges created, no errors
-- 🟡 Yellow — nothing to create (all already exist)
-- 🔴 Red — at least one error
+- scheduled charge generation
+- idempotency and skipped tenancies
+- partial Airtable create failures
+- Discord webhook failure being non-fatal
+- Airtable read retry behavior
+- `/run` bearer auth
 
-Fields: created list, skipped list, errors list.
+Known test-tooling note: the current Workers Vitest pool dependency falls back to its bundled `workerd` compatibility date during tests. The production Wrangler dry-run still uses the worker's configured `compatibility_date`.
 
 ## Files
 
 ```
 src/
-  index.ts    — Worker entry, generateCharges(), notifyDiscord()
-  helper.ts   — buildQS() for Airtable's fields[] bracket notation
+  index.ts     -- Worker entrypoint and route/cron wiring
+  charges.ts   -- charge-generation orchestration
+  due-date.ts  -- due date resolver
+  discord.ts   -- Discord summary notification
+  auth.ts      -- /run bearer auth
+test/
+  *.test.ts
+  integration/*.test.ts
 wrangler.jsonc
 tsconfig.json
 ```

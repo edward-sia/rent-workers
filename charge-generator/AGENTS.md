@@ -1,41 +1,62 @@
 # Cloudflare Workers
 
-STOP. Your knowledge of Cloudflare Workers APIs and limits may be outdated. Always retrieve current documentation before any Workers, KV, R2, D1, Durable Objects, Queues, Vectorize, AI, or Agents SDK task.
+STOP. Cloudflare Workers APIs, Wrangler config, and platform limits change over time. Retrieve current Cloudflare documentation before changing Workers runtime behavior, bindings, compatibility flags, limits, or Wrangler commands.
 
-## Docs
+## Current Worker Shape
 
-- https://developers.cloudflare.com/workers/
-- MCP: `https://docs.mcp.cloudflare.com/mcp`
+`charge-generator` is a TypeScript Cloudflare Worker.
 
-For all limits and quotas, retrieve from the product's `/platform/limits/` page. eg. `/workers/platform/limits`
+| File | Responsibility |
+|---|---|
+| `src/index.ts` | Worker entrypoint: scheduled handler and `/run` fetch route |
+| `src/charges.ts` | Charge-generation orchestration |
+| `src/due-date.ts` | Pure due-date resolver |
+| `src/discord.ts` | Discord summary webhook |
+| `src/auth.ts` | `/run` bearer-token guard |
+
+Airtable I/O lives in the shared workspace package `@rent/airtable-client`; do not reintroduce local Airtable fetch helpers in this worker.
 
 ## Commands
 
 | Command | Purpose |
-|---------|---------|
-| `npx wrangler dev` | Local development |
-| `npx wrangler deploy` | Deploy to Cloudflare |
-| `npx wrangler types` | Generate TypeScript types |
+|---|---|
+| `npm run dev` | Local development |
+| `npm run deploy` | Deploy to Cloudflare |
+| `npm run typecheck` | TypeScript check for this worker |
+| `npm run build` | Wrangler deploy dry-run |
+| `npm run cf-typegen` | Generate Worker binding types |
 
-Run `wrangler types` after changing bindings in wrangler.jsonc.
+From the repo root:
 
-## Node.js Compatibility
+| Command | Purpose |
+|---|---|
+| `npm run typecheck` | Type-check all workspaces |
+| `npm run test -- charge-generator` | Run this worker's tests |
+| `npm run test` | Run all workspace tests |
+| `npm run build` | Dry-run builds for deployable workers |
 
-https://developers.cloudflare.com/workers/runtime-apis/nodejs/
+## Secrets
 
-## Errors
+`/run` requires `RUN_TOKEN`:
 
-- **Error 1102** (CPU/Memory exceeded): Retrieve limits from `/workers/platform/limits/`
-- **All errors**: https://developers.cloudflare.com/workers/observability/errors/
+```bash
+npx wrangler secret put RUN_TOKEN
+```
+
+Manual runs must include:
+
+```bash
+Authorization: Bearer <RUN_TOKEN>
+```
+
+## Docs Discipline
+
+When changing behavior, config, secrets, file layout, commands, or operational steps, update this file and the relevant README in the same phase/commit series. Do not defer obvious documentation drift to the final documentation sweep.
 
 ## Product Docs
 
-Retrieve API references and limits from:
-`/kv/` · `/r2/` · `/d1/` · `/durable-objects/` · `/queues/` · `/vectorize/` · `/workers-ai/` · `/agents/`
+- Workers: https://developers.cloudflare.com/workers/
+- Wrangler: https://developers.cloudflare.com/workers/wrangler/
+- Errors: https://developers.cloudflare.com/workers/observability/errors/
 
-## Best Practices (conditional)
-
-If the application uses Durable Objects or Workflows, refer to the relevant best practices:
-
-- Durable Objects: https://developers.cloudflare.com/durable-objects/best-practices/rules-of-durable-objects/
-- Workflows: https://developers.cloudflare.com/workflows/build/rules-of-workflows/
+For limits and quotas, retrieve the relevant product `/platform/limits/` page.
