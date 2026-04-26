@@ -1,6 +1,7 @@
 import { AirtableClient, ChargeSchema, PaymentSchema, TABLES, TenancySchema } from '@rent/airtable-client';
 import { Bot, InlineKeyboard, type Context } from 'grammy';
 import { formatAUD, parseAmount, parseDate, todayISO, yesterdayISO } from './format';
+import type { PaymentConfirmLock } from './payment-confirm-lock';
 import { clearSession, getSession, setSession } from './session';
 import type { Env, WizardSession } from './types';
 
@@ -227,7 +228,12 @@ export function createBot(env: Env): Bot {
       return;
     }
 
-    const updated = { ...session, step: 'confirm' as const, date: value };
+    const updated = {
+      ...session,
+      step: 'confirm' as const,
+      date: value,
+      confirmationId: crypto.randomUUID(),
+    };
     await setSession(ctx.from!.id, updated, env.SESSION_KV);
     await sendConfirmation(ctx, updated);
   });
@@ -237,13 +243,42 @@ export function createBot(env: Env): Bot {
     const userId = ctx.from!.id;
     const session = await getSession(userId, env.SESSION_KV);
 
-    if (!session.chargeId || !session.amount || !session.method || !session.date) {
+    if (!session.chargeId || !session.amount || !session.method || !session.date || !session.confirmationId) {
       await ctx.editMessageText('❌ Session expired. Use /pay to start again.');
       await clearSession(userId, env.SESSION_KV);
       return;
     }
 
+    const confirmationId = session.confirmationId;
+    const lock = paymentConfirmLockForUser(env, userId);
+    const claim = await lock.claim(confirmationId);
+    if (!claim.claimed) {
+      await ctx.editMessageText('⏳ Payment confirmation is already being processed.');
+      return;
+    }
+
+    let paymentCreated = false;
     try {
+      const chargeRecords = await airtable.fetchAll(
+        TABLES.CHARGES,
+        ChargeSchema,
+        {
+          fields: ['Label', 'Balance', 'Status'],
+          filterByFormula: `RECORD_ID() = "${session.chargeId}"`,
+        },
+      );
+      const latestCharge = chargeRecords[0];
+      const latestBalance = latestCharge?.fields.Balance ?? 0;
+
+      if (!latestCharge || latestCharge.fields.Status === 'Paid' || latestBalance <= 0) {
+        await lock.release(confirmationId);
+        await clearSession(userId, env.SESSION_KV);
+        await ctx.editMessageText(
+          '❌ This charge no longer has an outstanding balance. Use /pay to start again.',
+        );
+        return;
+      }
+
       const namePart = session.tenancyLabel?.split(' ').slice(1).join(' ')
         ?? session.tenancyLabel
         ?? '';
@@ -261,29 +296,35 @@ export function createBot(env: Env): Bot {
           Notes: `Recorded via payment-bot on ${new Date().toLocaleString()}`,
         },
       );
+      paymentCreated = true;
 
-      const remaining = Math.max(0, (session.chargeBalance ?? 0) - session.amount);
+      await lock.complete(confirmationId);
+      await clearSession(userId, env.SESSION_KV);
+
+      const remaining = Math.max(0, latestBalance - session.amount);
       const airtableUrl = `https://airtable.com/${env.AIRTABLE_BASE_ID}/${TABLES.PAYMENTS}/${record.id}`;
 
       await ctx.editMessageText(
         `✅ *Payment recorded!*\n\n` +
         `👤 ${session.tenancyLabel}\n` +
-        `🧾 ${session.chargeLabel}\n` +
+        `🧾 ${latestCharge.fields.Label ?? session.chargeLabel}\n` +
         `💰 ${formatAUD(session.amount)} — ${session.method}\n` +
         `📅 ${session.date}\n` +
         `📊 Charge outstanding after: *${formatAUD(remaining)}*\n\n` +
         `🔗 [View in Airtable](${airtableUrl})`,
         { parse_mode: 'Markdown' },
       );
-
-      await clearSession(userId, env.SESSION_KV);
     } catch (e) {
+      if (!paymentCreated) {
+        await lock.release(confirmationId);
+      } else {
+        await clearSession(userId, env.SESSION_KV);
+      }
       const msg = (e as Error).message;
       console.error(`[payment-bot] create failed: ${msg}`);
       await ctx.editMessageText(`❌ Failed to save payment:\n\`${msg}\``, {
         parse_mode: 'Markdown',
       });
-      await clearSession(userId, env.SESSION_KV);
     }
   });
 
@@ -330,7 +371,12 @@ export function createBot(env: Env): Bot {
         return;
       }
 
-      const updated = { ...session, step: 'confirm' as const, date };
+      const updated = {
+        ...session,
+        step: 'confirm' as const,
+        date,
+        confirmationId: crypto.randomUUID(),
+      };
       await setSession(userId, updated, env.SESSION_KV);
       await sendConfirmation(ctx, updated);
       return;
@@ -354,4 +400,16 @@ async function sendConfirmation(
     parse_mode: 'Markdown',
     reply_markup: keyboard,
   });
+}
+
+function paymentConfirmLockForUser(
+  env: Env,
+  userId: number,
+): DurableObjectStub<PaymentConfirmLock> {
+  const name = String(userId);
+  const getByName = env.PAYMENT_CONFIRM_LOCK.getByName;
+  if (typeof getByName === 'function') {
+    return getByName.call(env.PAYMENT_CONFIRM_LOCK, name);
+  }
+  return env.PAYMENT_CONFIRM_LOCK.get(env.PAYMENT_CONFIRM_LOCK.idFromName(name));
 }

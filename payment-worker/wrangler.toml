@@ -20,3 +20,11 @@ AIRTABLE_BASE_ID = "app6He8xRaUzNBTDl"
 [[kv_namespaces]]
 binding = "SESSION_KV"
 id = "220ffe76ec364d6eaf8726ed01e6495b"
+
+[[durable_objects.bindings]]
+name = "PAYMENT_CONFIRM_LOCK"
+class_name = "PaymentConfirmLock"
+
+[[migrations]]
+tag = "v1"
+new_sqlite_classes = [ "PaymentConfirmLock" ]

@@ -3,6 +3,8 @@ import { createBot } from './bot';
 import { requireWebhookSecret } from './auth';
 import type { Env } from './types';
 
+export { PaymentConfirmLock } from './payment-confirm-lock';
+
 export default {
   async fetch(request: Request, env: Env): Promise<Response> {
     if (request.method !== 'POST') {
