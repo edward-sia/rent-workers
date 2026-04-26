@@ -70,6 +70,32 @@ export class AirtableClient {
     return out;
   }
 
+  async create<T>(
+    tableId: string,
+    schema:  z.ZodType<T>,
+    fields:  Partial<T>,
+  ): Promise<AirtableRecord<T>> {
+    const url = `${this.baseUrl()}/${tableId}`;
+    let res: Response;
+    try {
+      res = await this.request(url, {
+        method: 'POST',
+        body:   JSON.stringify({ fields }),
+      });
+    } catch (e) {
+      throw new Error(`Airtable create [${tableId}]: ${(e as Error).message}`);
+    }
+    const data = await res.json() as { id: string; fields: unknown };
+    const parsed = schema.safeParse(data.fields);
+    if (!parsed.success) {
+      const issue = parsed.error.issues[0];
+      throw new Error(
+        `Airtable schema mismatch on create [${tableId}/${data.id}] at ${issue?.path.join('.')}: ${issue?.message}`,
+      );
+    }
+    return { id: data.id, fields: parsed.data };
+  }
+
   private baseUrl(): string {
     return `https://api.airtable.com/v0/${this.env.AIRTABLE_BASE_ID}`;
   }
@@ -81,33 +107,29 @@ export class AirtableClient {
     };
   }
 
-  private async request(url: string): Promise<Response> {
+  private async request(url: string, init: RequestInit = {}): Promise<Response> {
+    const baseInit: RequestInit = {
+      ...init,
+      headers: { ...this.headers(), ...(init.headers as Record<string, string> | undefined) },
+    };
     let lastErr: unknown;
     for (let attempt = 0; attempt <= this.retries; attempt++) {
       try {
         const res = await fetch(url, {
-          headers: this.headers(),
-          signal:  AbortSignal.timeout(this.timeoutMs),
+          ...baseInit,
+          signal: AbortSignal.timeout(this.timeoutMs),
         });
         if (res.ok) return res;
         if (res.status >= 500) {
           lastErr = new Error(`HTTP ${res.status}: ${await res.text()}`);
-          if (attempt < this.retries) {
-            await this.sleep(this.backoffMs(attempt));
-            continue;
-          }
+          if (attempt < this.retries) { await this.sleep(this.backoffMs(attempt)); continue; }
           throw lastErr;
         }
-        // 4xx — non-retryable
         throw new Error(`HTTP ${res.status}: ${await res.text()}`);
       } catch (e) {
-        // Network errors and AbortError — retryable
         if (e instanceof TypeError || (e instanceof DOMException && e.name === 'AbortError')) {
           lastErr = e;
-          if (attempt < this.retries) {
-            await this.sleep(this.backoffMs(attempt));
-            continue;
-          }
+          if (attempt < this.retries) { await this.sleep(this.backoffMs(attempt)); continue; }
           throw e;
         }
         throw e;
