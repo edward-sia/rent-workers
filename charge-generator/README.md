@@ -100,6 +100,10 @@ curl -H "Authorization: Bearer $RUN_TOKEN" \
 
 Returns `Done — check Discord` on success and `401` when the bearer is missing, too short, or incorrect.
 
+## Notification and Log Privacy
+
+Discord summaries and Cloudflare logs are intentionally minimized. They include the period, created/skipped/error counts, status codes, and stable Airtable record IDs such as tenancy or charge IDs. They do not include tenant labels, rent amounts, or raw upstream response bodies.
+
 ## Testing
 
 Unit tests cover:

@@ -15,7 +15,7 @@ describe('notifyDiscord', () => {
   it('returns true on 2xx', async () => {
     vi.stubGlobal('fetch', vi.fn(async () => new Response(null, { status: 204 })));
 
-    const ok = await notifyDiscord('http://x', '2026-05', ['A'], [], []);
+    const ok = await notifyDiscord('http://x', '2026-05', ['recA'], [], []);
 
     expect(ok).toBe(true);
   });
@@ -24,7 +24,7 @@ describe('notifyDiscord', () => {
     const fetchMock = vi.fn(async () => new Response(null, { status: 204 }));
     vi.stubGlobal('fetch', fetchMock);
 
-    await notifyDiscord('http://x', '2026-05', [], [], ['boom']);
+    await notifyDiscord('http://x', '2026-05', [], [], ['tenancy recA: Airtable create failed']);
 
     expect(sentEmbed(fetchMock).color).toBe(0xff4444);
   });
@@ -33,7 +33,7 @@ describe('notifyDiscord', () => {
     const fetchMock = vi.fn(async () => new Response(null, { status: 204 }));
     vi.stubGlobal('fetch', fetchMock);
 
-    await notifyDiscord('http://x', '2026-05', ['A'], [], []);
+    await notifyDiscord('http://x', '2026-05', ['recA'], [], []);
 
     expect(sentEmbed(fetchMock).color).toBe(0x00c851);
   });
@@ -42,17 +42,20 @@ describe('notifyDiscord', () => {
     const fetchMock = vi.fn(async () => new Response(null, { status: 204 }));
     vi.stubGlobal('fetch', fetchMock);
 
-    await notifyDiscord('http://x', '2026-05', [], ['A'], []);
+    await notifyDiscord('http://x', '2026-05', [], ['recA'], []);
 
     expect(sentEmbed(fetchMock).color).toBe(0xffbb33);
   });
 
   it('returns false on non-2xx without throwing', async () => {
-    vi.stubGlobal('fetch', vi.fn(async () => new Response('nope', { status: 502 })));
+    const errorSpy = vi.spyOn(console, 'error').mockImplementation(() => {});
+    vi.stubGlobal('fetch', vi.fn(async () => new Response('tenant upstream details', { status: 502 })));
 
-    const ok = await notifyDiscord('http://x', '2026-05', ['A'], [], []);
+    const ok = await notifyDiscord('http://x', '2026-05', ['recA'], [], []);
 
     expect(ok).toBe(false);
+    expect(errorSpy).toHaveBeenCalledWith('[Discord] webhook failed: status=502');
+    expect(errorSpy.mock.calls.flat().join('\n')).not.toContain('tenant upstream details');
   });
 
   it('returns false on network error without throwing', async () => {
@@ -60,7 +63,7 @@ describe('notifyDiscord', () => {
       throw new TypeError('down');
     }));
 
-    const ok = await notifyDiscord('http://x', '2026-05', ['A'], [], []);
+    const ok = await notifyDiscord('http://x', '2026-05', ['recA'], [], []);
 
     expect(ok).toBe(false);
   });

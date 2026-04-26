@@ -122,9 +122,9 @@ describe('scheduled handler', () => {
       .intercept({ path: new RegExp(`/v0/appTEST/${TENANCIES}\\?.*`) })
       .reply(200, {
         records: [
-          tenancyRec('rec1', 'A', 1000, 5),
-          tenancyRec('rec2', 'B', 1500, 10),
-          tenancyRec('rec3', 'C', 2000, 15),
+          tenancyRec('rec1', 'Alice', 1000, 5),
+          tenancyRec('rec2', 'Bob', 1500, 10),
+          tenancyRec('rec3', 'Carol', 2000, 15),
         ],
       });
 
@@ -157,8 +157,10 @@ describe('scheduled handler', () => {
     expect(postCount).toBe(1);
     expect(discordPayloads[0].embeds[0].color).toBe(0x00c851);
     expect(discordPayloads[0].embeds[0].fields[1].name).toBe('⏭ Already existed (2)');
-    expect(discordPayloads[0].embeds[0].fields[1].value).toContain('A');
-    expect(discordPayloads[0].embeds[0].fields[1].value).toContain('B');
+    expect(discordPayloads[0].embeds[0].fields[1].value).toContain('tenancy rec1');
+    expect(discordPayloads[0].embeds[0].fields[1].value).toContain('tenancy rec2');
+    expect(discordPayloads[0].embeds[0].fields[1].value).not.toContain('Alice');
+    expect(discordPayloads[0].embeds[0].fields[1].value).not.toContain('Bob');
   });
 
   it('all-covered idempotency posts yellow and creates nothing', async () => {
@@ -197,9 +199,9 @@ describe('scheduled handler', () => {
       .intercept({ path: new RegExp(`/v0/appTEST/${TENANCIES}\\?.*`) })
       .reply(200, {
         records: [
-          tenancyRec('rec1', 'A', 1000, 5),
-          tenancyRec('rec2', 'B', 1500, 10),
-          tenancyRec('rec3', 'C', 2000, 15),
+          tenancyRec('rec1', 'Alice', 1000, 5),
+          tenancyRec('rec2', 'Bob', 1500, 10),
+          tenancyRec('rec3', 'Carol', 2000, 15),
         ],
       });
 
@@ -209,12 +211,17 @@ describe('scheduled handler', () => {
       .reply(200, { records: [] });
 
     let attempts = 0;
+    const errorMessages: string[] = [];
+    const originalError = console.error;
+    console.error = (...args: unknown[]) => {
+      errorMessages.push(args.map(String).join(' '));
+    };
     fetchMock
       .get(AT_ORIGIN)
       .intercept({ path: `/v0/appTEST/${CHARGES}`, method: 'POST' })
       .reply(() => {
         attempts++;
-        return { statusCode: 422, data: { error: 'bad fields' } };
+        return { statusCode: 422, data: { error: 'bad fields for tenant Alice amount 1000' } };
       });
     fetchMock
       .get(AT_ORIGIN)
@@ -240,12 +247,27 @@ describe('scheduled handler', () => {
 
     const discordPayloads = mockDiscord();
 
-    await runScheduled();
+    try {
+      await runScheduled();
+    } finally {
+      console.error = originalError;
+    }
 
     expect(attempts).toBe(3);
     expect(discordPayloads[0].embeds[0].color).toBe(0xff4444);
     expect(discordPayloads[0].embeds[0].fields[0].name).toBe('✅ Created (2)');
     expect(discordPayloads[0].embeds[0].fields[2].name).toBe('❌ Errors (1)');
+    expect(discordPayloads[0].embeds[0].fields[2].value).toContain('tenancy rec1');
+    expect(discordPayloads[0].embeds[0].fields[2].value).toContain('HTTP 422');
+    expect(discordPayloads[0].embeds[0].fields[2].value).not.toContain('Alice');
+    expect(discordPayloads[0].embeds[0].fields[2].value).not.toContain('bad fields');
+    expect(discordPayloads[0].embeds[0].fields[2].value).not.toContain('1000');
+    const logText = errorMessages.join('\n');
+    expect(logText).toContain('tenancy=rec1');
+    expect(logText).toContain('HTTP 422');
+    expect(logText).not.toContain('Alice');
+    expect(logText).not.toContain('bad fields');
+    expect(logText).not.toContain('1000');
   });
 
   it('Discord webhook 502 does not throw after charges are created', async () => {
