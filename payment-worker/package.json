@@ -1,6 +1,6 @@
 {
   "name": "payment-bot",
-  "version": "1.0.0",
+  "version": "2.0.0",
   "private": true,
   "scripts": {
     "dev":    "wrangler dev",
@@ -10,7 +10,9 @@
     "build":     "wrangler deploy --dry-run --outdir /tmp/$npm_package_name-build"
   },
   "dependencies": {
-    "grammy": "^1.31.0"
+    "@rent/airtable-client": "*",
+    "grammy": "^1.31.0",
+    "zod": "^3.23.8"
   },
   "devDependencies": {
     "@cloudflare/workers-types": "^4.20250109.0",

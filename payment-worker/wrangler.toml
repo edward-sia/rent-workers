@@ -1,9 +1,11 @@
 name               = "payment-bot"
 main               = "src/index.ts"
-compatibility_date = "2025-01-01"
+compatibility_date = "2026-04-26"
+compatibility_flags = ["nodejs_compat"]
 
 # Secrets — set via: wrangler secret put <NAME>
 #   TELEGRAM_BOT_TOKEN   — from @BotFather
+#   TELEGRAM_WEBHOOK_SECRET — secret_token Telegram echoes to webhook POSTs
 #   AIRTABLE_TOKEN       — PAT with data.records:read + data.records:write
 #   AUTHORIZED_USER_ID   — your Telegram numeric user ID (get from @userinfobot)
 
