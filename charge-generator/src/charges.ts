@@ -13,14 +13,27 @@ export interface ChargesEnv {
   DISCORD_WEBHOOK_URL: string;
 }
 
-export async function generateCharges(env: ChargesEnv): Promise<void> {
-  const client = new AirtableClient(env);
+export interface ChargePeriod {
+  period: string;
+  year: number;
+  month: string;
+}
 
-  const now = new Date();
-  const next = new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth() + 1, 1));
+export function getNextChargePeriod(date = new Date()): ChargePeriod {
+  const next = new Date(Date.UTC(date.getUTCFullYear(), date.getUTCMonth() + 1, 1));
   const year = next.getUTCFullYear();
   const month = String(next.getUTCMonth() + 1).padStart(2, '0');
   const period = `${year}-${month}`;
+
+  return { period, year, month };
+}
+
+export async function generateCharges(
+  env: ChargesEnv,
+  chargePeriod = getNextChargePeriod(),
+): Promise<void> {
+  const client = new AirtableClient(env);
+  const { period, year, month } = chargePeriod;
 
   const tenancies = await client.fetchAll(
     TABLES.TENANCIES,

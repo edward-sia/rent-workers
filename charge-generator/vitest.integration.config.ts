@@ -17,6 +17,12 @@ export default defineWorkersProject({
             DISCORD_WEBHOOK_URL: 'https://discord.test/webhook',
             RUN_TOKEN: 'a'.repeat(32),
           },
+          durableObjects: {
+            CHARGE_GENERATION_LOCK: {
+              className: 'ChargeGenerationLock',
+              useSQLite: true,
+            },
+          },
         },
       },
     },

@@ -161,6 +161,36 @@ describe('scheduled handler', () => {
     expect(discordPayloads[0].embeds[0].fields[1].value).toContain('B');
   });
 
+  it('concurrent scheduled runs create charges only once for the period', async () => {
+    fetchMock
+      .get(AT_ORIGIN)
+      .intercept({ path: new RegExp(`/v0/appTEST/${TENANCIES}\\?.*`) })
+      .reply(200, { records: [tenancyRec('rec1', 'A', 1000, 5)] });
+
+    fetchMock
+      .get(AT_ORIGIN)
+      .intercept({ path: new RegExp(`/v0/appTEST/${CHARGES}\\?.*`) })
+      .reply(200, { records: [] });
+
+    let postCount = 0;
+    fetchMock
+      .get(AT_ORIGIN)
+      .intercept({ path: `/v0/appTEST/${CHARGES}`, method: 'POST' })
+      .reply(() => {
+        postCount++;
+        return {
+          statusCode: 200,
+          data: { id: `recCharge${postCount}`, fields: { Label: `Charge ${postCount}` } },
+        };
+      });
+
+    mockDiscord();
+
+    await Promise.all([runScheduled(), runScheduled()]);
+
+    expect(postCount).toBe(1);
+  });
+
   it('all-covered idempotency posts yellow and creates nothing', async () => {
     fetchMock
       .get(AT_ORIGIN)
