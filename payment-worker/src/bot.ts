@@ -124,6 +124,7 @@ export function createBot(env: Env): Bot {
   // ── STEP 2: Tenancy selected → show outstanding charges ─
   bot.callbackQuery(/^tenancy:(.+)$/, async (ctx) => {
     const tenancyId = ctx.match[1];
+    if (!tenancyId) return;
     await ctx.answerCallbackQuery();
 
     // Resolve label for the selected tenancy
