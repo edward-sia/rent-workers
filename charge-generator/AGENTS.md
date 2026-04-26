@@ -16,6 +16,8 @@ STOP. Cloudflare Workers APIs, Wrangler config, and platform limits change over 
 
 Airtable I/O lives in the shared workspace package `@rent/airtable-client`; do not reintroduce local Airtable fetch helpers in this worker.
 
+Discord notifications and Cloudflare logs must stay minimized: use counts, status codes, and stable Airtable record IDs, not tenant labels, rent amounts, or raw upstream response bodies.
+
 ## Commands
 
 | Command | Purpose |

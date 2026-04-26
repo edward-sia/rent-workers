@@ -1,7 +1,10 @@
 import {
   AirtableClient,
+  type AirtableRecord,
+  type Charge,
   ChargeSchema,
   TABLES,
+  type Tenancy,
   TenancySchema,
 } from '@rent/airtable-client';
 import { notifyDiscord } from './discord';
@@ -22,23 +25,33 @@ export async function generateCharges(env: ChargesEnv): Promise<void> {
   const month = String(next.getUTCMonth() + 1).padStart(2, '0');
   const period = `${year}-${month}`;
 
-  const tenancies = await client.fetchAll(
-    TABLES.TENANCIES,
-    TenancySchema,
-    {
-      fields: ['Label', 'Monthly Rent', 'Start Date', 'End Date', 'Due Day'],
-      filterByFormula: 'OR({End Date} = BLANK(), IS_AFTER({End Date}, TODAY()))',
-    },
-  );
+  let tenancies: AirtableRecord<Tenancy>[];
+  let existing: AirtableRecord<Charge>[];
+  try {
+    tenancies = await client.fetchAll(
+      TABLES.TENANCIES,
+      TenancySchema,
+      {
+        fields: ['Label', 'Monthly Rent', 'Start Date', 'End Date', 'Due Day'],
+        filterByFormula: 'OR({End Date} = BLANK(), IS_AFTER({End Date}, TODAY()))',
+      },
+    );
 
-  const existing = await client.fetchAll(
-    TABLES.CHARGES,
-    ChargeSchema,
-    {
-      fields: ['Label', 'Period', 'Tenancy'],
-      filterByFormula: `{Period} = "${period}"`,
-    },
-  );
+    existing = await client.fetchAll(
+      TABLES.CHARGES,
+      ChargeSchema,
+      {
+        fields: ['Label', 'Period', 'Tenancy'],
+        filterByFormula: `{Period} = "${period}"`,
+      },
+    );
+  } catch (e) {
+    const reason = summarizeAirtableFailure(e);
+    const msg = `Airtable read failed${reason ? ` (${reason})` : ''}`;
+    console.error(`[${period}] ${msg}`);
+    await notifyDiscord(env.DISCORD_WEBHOOK_URL, period, [], [], [msg]);
+    throw new Error(msg);
+  }
 
   const alreadyCovered = new Set<string>();
   for (const charge of existing) {
@@ -53,7 +66,7 @@ export async function generateCharges(env: ChargesEnv): Promise<void> {
     const label = tenancy.fields.Label;
 
     if (alreadyCovered.has(tenancy.id)) {
-      skipped.push(label);
+      skipped.push(`tenancy ${tenancy.id}`);
       continue;
     }
 
@@ -61,7 +74,7 @@ export async function generateCharges(env: ChargesEnv): Promise<void> {
     const dueDate = resolveDueDate(tenancy.fields, year, month);
 
     try {
-      await client.create(TABLES.CHARGES, ChargeSchema, {
+      const charge = await client.create(TABLES.CHARGES, ChargeSchema, {
         Label: `${label} ${period} Rent`,
         Tenancy: [tenancy.id],
         Type: 'Rent',
@@ -69,11 +82,14 @@ export async function generateCharges(env: ChargesEnv): Promise<void> {
         'Due Date': dueDate,
         Amount: rent,
       });
-      created.push(`${label} → due ${dueDate}`);
+      created.push(`tenancy ${tenancy.id} → charge ${charge.id} due ${dueDate}`);
     } catch (e) {
-      const msg = `${label}: ${(e as Error).message}`;
+      const reason = summarizeAirtableFailure(e);
+      const msg = `tenancy ${tenancy.id}: Airtable create failed${reason ? ` (${reason})` : ''}`;
       errors.push(msg);
-      console.error(`[charge error] ${msg}`);
+      console.error(
+        `[charge error] period=${period} tenancy=${tenancy.id} status=${reason ?? 'failed'}`,
+      );
     }
   }
 
@@ -91,4 +107,10 @@ export async function generateCharges(env: ChargesEnv): Promise<void> {
   console.log(
     `[${period}] created=${created.length} skipped=${skipped.length} errors=${errors.length} discord=${discordOk}`,
   );
+}
+
+function summarizeAirtableFailure(e: unknown): string | undefined {
+  const message = e instanceof Error ? e.message : String(e);
+  return message.match(/\bHTTP\s+\d{3}\b/)?.[0]
+    ?? (message.includes('Airtable schema mismatch') ? 'schema mismatch' : undefined);
 }

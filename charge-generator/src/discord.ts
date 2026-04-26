@@ -39,7 +39,7 @@ export async function notifyDiscord(
       body: JSON.stringify({ embeds: [embed] }),
     });
     if (!res.ok) {
-      console.error(`[Discord] webhook failed: ${res.status} ${await res.text()}`);
+      console.error(`[Discord] webhook failed: status=${res.status}`);
       return false;
     }
     return true;
