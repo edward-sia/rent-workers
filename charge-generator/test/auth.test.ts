@@ -27,7 +27,7 @@ describe('requireBearer', () => {
     expect(requireBearer(req, secret)?.status).toBe(401);
   });
 
-  it('returns 401 when token does not match', () => {
+  it('returns 401 when same-length token does not match', () => {
     const req = new Request('https://x/run', {
       headers: { Authorization: `Bearer ${'b'.repeat(32)}` },
     });
@@ -41,5 +41,13 @@ describe('requireBearer', () => {
     });
 
     expect(requireBearer(req, '')?.status).toBe(401);
+  });
+
+  it('returns 401 when expected secret is too short', () => {
+    const req = new Request('https://x/run', {
+      headers: { Authorization: 'Bearer short' },
+    });
+
+    expect(requireBearer(req, 'short')?.status).toBe(401);
   });
 });
