@@ -6,9 +6,10 @@ npm-workspaces monorepo for Cloudflare Workers that automate rent management for
 
 | Path | What it is | Status |
 |---|---|---|
-| [`packages/airtable-client/`](./packages/airtable-client/) | Shared Airtable REST client with Zod validation, pagination, retries, and timeouts | In use by `charge-generator` |
-| [`charge-generator/`](./charge-generator/) | Monthly cron Worker that creates rent charges and posts a Discord summary | Productionized in Phase 3 |
-| [`payment-worker/`](./payment-worker/) | Telegram webhook Worker for recording tenant payments | Pending Phase 4 migration |
+| [`packages/airtable-client/`](./packages/airtable-client/) | Shared Airtable REST client with Zod validation, pagination, retries, and timeouts | Used by both workers |
+| [`charge-generator/`](./charge-generator/) | Monthly cron Worker that creates rent charges and posts a Discord summary | Productionized |
+| [`payment-worker/`](./payment-worker/) | Telegram webhook Worker for recording tenant payments | Productionized |
+| [`scripts/check-airtable-schema.ts`](./scripts/check-airtable-schema.ts) | Airtable schema-drift check used locally and by CI | Added in Phase 5 |
 | [`docs/superpowers/`](./docs/superpowers/) | Approved productionization spec and implementation plan | Source of truth for remaining phases |
 
 ## Shared Airtable Base
@@ -35,7 +36,10 @@ Common checks:
 npm run typecheck
 npm run test
 npm run build
+npm run check:schema
 ```
+
+`npm run check:schema` requires real Airtable credentials in the environment and is the only check that should touch the live Airtable API.
 
 Per-worker development still works from each worker directory:
 
@@ -46,7 +50,7 @@ cd payment-worker && npm run dev
 
 ## Production Setup Notes
 
-`charge-generator` now requires a high-entropy bearer token for manual `/run` requests:
+`charge-generator` requires a high-entropy bearer token for manual `/run` requests:
 
 ```bash
 cd charge-generator
@@ -60,7 +64,31 @@ curl -H "Authorization: Bearer $RUN_TOKEN" \
   https://charge-generator.<subdomain>.workers.dev/run
 ```
 
-The remaining payment bot hardening is planned for Phase 4: `TELEGRAM_WEBHOOK_SECRET`, Airtable client migration, and Worker integration tests.
+`payment-worker` requires a Telegram webhook secret. Generate a high-entropy value, store it as a Worker secret, then register the Telegram webhook with the same value:
+
+```bash
+cd payment-worker
+npx wrangler secret put TELEGRAM_WEBHOOK_SECRET
+
+curl "https://api.telegram.org/bot<TELEGRAM_BOT_TOKEN>/setWebhook" \
+  -d "url=https://payment-bot.<subdomain>.workers.dev" \
+  -d "secret_token=<TELEGRAM_WEBHOOK_SECRET>"
+```
+
+GitHub repository secrets for the nightly schema check:
+
+| Secret | Purpose |
+|---|---|
+| `AIRTABLE_TOKEN` | Read-only PAT for Airtable schema checks |
+| `AIRTABLE_BASE_ID` | Airtable base ID, for example `app6He8xRaUzNBTDl` |
+| `DISCORD_WEBHOOK_URL` | Alert target for schema drift |
+
+## CI
+
+| Workflow | Purpose |
+|---|---|
+| `.github/workflows/ci.yml` | Typecheck, lint, test, and build on push/PR |
+| `.github/workflows/schema-check.yml` | Nightly and manual Airtable schema-drift check |
 
 ## Documentation Policy
 

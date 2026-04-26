@@ -1,0 +1,36 @@
+name: schema-check
+
+on:
+  schedule:
+    - cron: '0 2 * * *'
+  workflow_dispatch:
+
+jobs:
+  check:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+          cache: npm
+      - run: npm ci
+      - id: check
+        env:
+          AIRTABLE_TOKEN: ${{ secrets.AIRTABLE_TOKEN }}
+          AIRTABLE_BASE_ID: ${{ secrets.AIRTABLE_BASE_ID }}
+        run: |
+          set +e
+          npm run check:schema > /tmp/schema-output.txt 2>&1
+          exit_code=$?
+          cat /tmp/schema-output.txt
+          echo "exit_code=$exit_code" >> "$GITHUB_OUTPUT"
+      - name: Notify Discord on drift
+        if: steps.check.outputs.exit_code != '0'
+        env:
+          DISCORD_WEBHOOK_URL: ${{ secrets.DISCORD_WEBHOOK_URL }}
+        run: |
+          body=$(tail -c 1500 /tmp/schema-output.txt)
+          jq -n --arg content "Airtable schema drift detected\n\n\`\`\`\n$body\n\`\`\`" '{content: $content}' |
+            curl -X POST -H "Content-Type: application/json" -d @- "$DISCORD_WEBHOOK_URL"
+          exit 1
