@@ -21,7 +21,16 @@ Updated: 2026-04-26
 | Phase 1 — Monorepo skeleton | Complete | Workspaces root, shared TS config, and Vitest workspace are in place. |
 | Phase 2 — Shared `@rent/airtable-client` | Complete | Shared Airtable client, schemas, retries, timeouts, and tests are in place. |
 | Phase 3 — Migrate `charge-generator` | Complete | `charge-generator` uses `@rent/airtable-client`, `/run` requires `RUN_TOKEN`, and unit/integration tests cover scheduled and fetch flows. |
-| Phase 4 — Migrate `payment-worker` | Next | Payment worker docs should be updated as each task lands. |
+| Phase 4 — Migrate `payment-worker` | Complete | `payment-worker` uses `@rent/airtable-client`, extracted helpers, webhook secret auth, and unit/integration tests. |
+| Phase 5 — Schema-drift script + CI workflows | Complete locally, except coverage gate | Schema script, lint, and GitHub workflows are in place; live schema run and Actions secrets require operator credentials. Coverage-drop gating needs a separate Workers-compatible tooling solution. |
+| Phase 6 — Documentation sweep | Complete | Root, payment-worker, shared client, and runbook docs reflect the productionized state. |
+
+## Status notes
+
+- Local verification passed for `npm run typecheck`, `npm run test`, `npm run build`, and `npx tsc --noEmit -p scripts/tsconfig.json`.
+- `npm run check:schema` requires live `AIRTABLE_TOKEN` and `AIRTABLE_BASE_ID`; local verification without those env vars only confirms it fails fast with a missing-credentials message.
+- GitHub Actions secrets still need to be configured by an operator before the nightly schema workflow can be verified end to end.
+- Coverage gating from the original spec is not wired into CI yet. A trial `@vitest/coverage-v8` run failed under the Workers pool because it imports `node:inspector` inside `workerd`; solve this as a separate tooling task rather than shipping a broken coverage step.
 
 ## Documentation lane
 
@@ -29,13 +38,13 @@ Documentation is no longer deferred entirely to Phase 6. From Phase 4 onward, ev
 
 Phase 6 remains as the final documentation sweep, but it should be cleanup rather than the first time docs learn about completed work.
 
-Close each phase with a small docs-sync commit when needed. That commit should update only behavior that has actually landed; do not document future Phase 4/5 secrets, CI workflows, or schema-check behavior before those phases are implemented.
+Close each phase with a small docs-sync commit when needed. When docs intentionally describe the target final state ahead of parallel implementation, add a status note so readers know which files and workflows still need confirmation.
 
 ---
 
 ## Notes for the implementing engineer
 
-- Active implementation is on the `productionize-workers` branch/worktree. Keep commits small and push stable phase checkpoints to GitHub.
+- Active implementation is on a feature branch/worktree. Keep commits small and push stable phase checkpoints to GitHub.
 - Both workers must remain deployable at the end of every task. If a task would break a worker mid-way, the task is sized wrong — split it.
 - Pure-TypeScript tests run on Node via vitest's default pool. Worker-runtime tests (anything that imports `cloudflare:workers` or uses `SELF.scheduled` / `SELF.fetch`) run via `@cloudflare/vitest-pool-workers`. We configure both pools in `vitest.workspace.ts`.
 - `wrangler` reads `compatibility_date` to pick the runtime version. We align both workers to a recent date as part of Phase 5.

@@ -1,6 +1,6 @@
 # @rent/airtable-client
 
-Shared Airtable REST client used by the workers in this repo.
+Shared Airtable REST client used by `charge-generator` and `payment-worker`.
 
 ## API
 
@@ -8,12 +8,13 @@ Shared Airtable REST client used by the workers in this repo.
 import {
   AirtableClient,
   ChargeSchema,
+  PaymentSchema,
   TABLES,
   TenancySchema,
 } from '@rent/airtable-client';
 
 const client = new AirtableClient({
-  AIRTABLE_TOKEN: env.AIRTABLE_TOKEN,
+  AIRTABLE_TOKEN:   env.AIRTABLE_TOKEN,
   AIRTABLE_BASE_ID: env.AIRTABLE_BASE_ID,
 });
 
@@ -28,6 +29,12 @@ const charge = await client.create(
   ChargeSchema,
   { Label: 'Example 2026-05 Rent', Tenancy: ['rec123'], Amount: 1650 },
 );
+
+const payment = await client.create(
+  TABLES.PAYMENTS,
+  PaymentSchema,
+  { Label: 'Example 2026-05-01 $1,650.00', Charge: [charge.id], Amount: 1650 },
+);
 ```
 
 ## Behavior
@@ -40,10 +47,20 @@ const charge = await client.create(
 - Retries network errors and 5xx responses up to two times.
 - Fails fast on 4xx responses.
 
+## Schema Drift
+
+The repo includes `scripts/check-airtable-schema.ts`, which compares required Airtable fields against the live base. Run it locally only with real credentials:
+
+```bash
+AIRTABLE_TOKEN=... AIRTABLE_BASE_ID=app6He8xRaUzNBTDl npm run check:schema
+```
+
+The GitHub `schema-check` workflow runs the same check nightly and alerts Discord when fields drift.
+
 ## Adding Tables or Fields
 
 1. Add table IDs to `src/tables.ts`.
 2. Add or update schemas in `src/schemas.ts`.
 3. Add schema tests under `test/`.
 4. Update any worker README that depends on the new fields.
-5. When the schema-drift script lands, update its required-field list too.
+5. Update the required-field list in `scripts/check-airtable-schema.ts`.
