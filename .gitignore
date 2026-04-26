@@ -1,0 +1,17 @@
+# dependencies
+node_modules/
+
+# wrangler
+.wrangler/
+worker-configuration.d.ts
+
+# secrets / env
+.env*
+!.env.example
+.dev.vars*
+!.dev.vars.example
+
+# misc
+*.tsbuildinfo
+*.log
+.DS_Store
