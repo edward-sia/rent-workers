@@ -6,6 +6,20 @@
   "triggers": {
     "crons": ["0 0 15 * *"]
   },
+  "durable_objects": {
+    "bindings": [
+      {
+        "name": "CHARGE_GENERATION_LOCK",
+        "class_name": "ChargeGenerationLock"
+      }
+    ]
+  },
+  "migrations": [
+    {
+      "tag": "v1",
+      "new_sqlite_classes": ["ChargeGenerationLock"]
+    }
+  ],
   "observability": {
     "logs": {
       "enabled": true
