@@ -34,8 +34,10 @@ Common checks:
 
 ```bash
 npm run typecheck
+npm run lint
 npm run test
 npm run build
+npm run build:staging
 npm run check:schema
 ```
 
@@ -88,7 +90,22 @@ GitHub repository secrets for the nightly schema check:
 | Workflow | Purpose |
 |---|---|
 | `.github/workflows/ci.yml` | Typecheck, lint, test, and build on push/PR |
+| `.github/workflows/deploy-staging.yml` | Deploy both Workers to staging after `main` is updated, then smoke test `/health` and Telegram webhook registration |
 | `.github/workflows/schema-check.yml` | Nightly and manual Airtable schema-drift check |
+
+## Staging
+
+Staging uses separate Cloudflare Worker names, a separate Airtable base, a separate Telegram bot, and a separate KV namespace:
+
+| Component | Staging value |
+|---|---|
+| Airtable base | `appzRYFa1yW5pQDEW` |
+| Telegram bot | `@ChwqueudciBot` |
+| Charge Worker | `charge-generator-staging` |
+| Payment Worker | `payment-bot-staging` |
+| Payment KV namespace | `RENT_STAGING_KV` / `17e24003884e454dbd96d81acc37bf2d` |
+
+See [`docs/staging-cicd.md`](./docs/staging-cicd.md) for the GitHub Environment variables/secrets and Cloudflare secret setup.
 
 ## Documentation Policy
 

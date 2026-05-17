@@ -9,12 +9,19 @@ export interface Env {
 }
 
 export default {
-  async scheduled(_event: ScheduledController, env: Env, ctx: ExecutionContext) {
-    ctx.waitUntil(generateCharges(env));
+  async scheduled(event: ScheduledController, env: Env, ctx: ExecutionContext) {
+    ctx.waitUntil(generateCharges(env, new Date(event.scheduledTime)));
   },
 
   async fetch(request: Request, env: Env): Promise<Response> {
     const url = new URL(request.url);
+    if (url.pathname === '/health') {
+      return Response.json({
+        ok: true,
+        service: 'charge-generator',
+      });
+    }
+
     if (url.pathname === '/run') {
       const denied = requireBearer(request, env.RUN_TOKEN);
       if (denied) return denied;

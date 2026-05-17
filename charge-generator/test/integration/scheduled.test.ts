@@ -43,7 +43,13 @@ function parseBody(body: unknown): any {
 
 async function runScheduled() {
   const ctx = createExecutionContext();
-  await worker.scheduled(createScheduledController(), env as Env, ctx);
+  await worker.scheduled(
+    createScheduledController({
+      scheduledTime: Date.UTC(2026, 3, 15),
+    }),
+    env as Env,
+    ctx,
+  );
   await waitOnExecutionContext(ctx);
 }
 

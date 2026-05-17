@@ -16,10 +16,9 @@ export interface ChargesEnv {
   DISCORD_WEBHOOK_URL: string;
 }
 
-export async function generateCharges(env: ChargesEnv): Promise<void> {
+export async function generateCharges(env: ChargesEnv, now = new Date()): Promise<void> {
   const client = new AirtableClient(env);
 
-  const now = new Date();
   const next = new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth() + 1, 1));
   const year = next.getUTCFullYear();
   const month = String(next.getUTCMonth() + 1).padStart(2, '0');

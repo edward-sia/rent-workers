@@ -23,6 +23,17 @@ describe('fetch handler', () => {
     expect(await res.text()).toBe('charge-generator is running');
   });
 
+  it('GET /health returns a non-mutating health payload', async () => {
+    const res = await SELF.fetch('https://worker.test/health');
+
+    expect(res.status).toBe(200);
+    expect(res.headers.get('content-type')).toContain('application/json');
+    expect(await res.json()).toEqual({
+      ok: true,
+      service: 'charge-generator',
+    });
+  });
+
   it('GET /run without bearer returns 401', async () => {
     const res = await SELF.fetch('https://worker.test/run');
 

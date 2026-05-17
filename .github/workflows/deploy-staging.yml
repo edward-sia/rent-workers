@@ -1,0 +1,80 @@
+name: deploy-staging
+
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+concurrency:
+  group: staging-deploy
+  cancel-in-progress: false
+
+jobs:
+  deploy-staging:
+    runs-on: ubuntu-latest
+    environment: staging
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+          cache: npm
+      - run: npm ci
+      - run: npm run typecheck
+      - run: npm run lint --if-present
+      - run: npm run test
+      - run: npm run build
+      - name: Deploy charge-generator staging
+        run: npm run deploy --workspace charge-generator -- --env staging
+        env:
+          CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+          CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+      - name: Deploy payment-bot staging
+        run: npm run deploy --workspace payment-worker -- --env staging
+        env:
+          CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+          CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+      - name: Configure staging Telegram webhook
+        env:
+          STAGING_PAYMENT_BOT_URL: ${{ vars.STAGING_PAYMENT_BOT_URL }}
+          STAGING_TELEGRAM_BOT_TOKEN: ${{ secrets.STAGING_TELEGRAM_BOT_TOKEN }}
+          STAGING_TELEGRAM_WEBHOOK_SECRET: ${{ secrets.STAGING_TELEGRAM_WEBHOOK_SECRET }}
+        run: |
+          test -n "$STAGING_PAYMENT_BOT_URL"
+          test -n "$STAGING_TELEGRAM_BOT_TOKEN"
+          test -n "$STAGING_TELEGRAM_WEBHOOK_SECRET"
+          payload="$(jq -n \
+            --arg url "$STAGING_PAYMENT_BOT_URL" \
+            --arg secret "$STAGING_TELEGRAM_WEBHOOK_SECRET" \
+            '{url: $url, secret_token: $secret, drop_pending_updates: true, allowed_updates: ["message", "callback_query"]}')"
+          curl --fail --silent --show-error \
+            -H "Content-Type: application/json" \
+            -d "$payload" \
+            "https://api.telegram.org/bot${STAGING_TELEGRAM_BOT_TOKEN}/setWebhook"
+      - name: Smoke test staging workers
+        env:
+          STAGING_CHARGE_GENERATOR_URL: ${{ vars.STAGING_CHARGE_GENERATOR_URL }}
+          STAGING_PAYMENT_BOT_URL: ${{ vars.STAGING_PAYMENT_BOT_URL }}
+        run: |
+          test -n "$STAGING_CHARGE_GENERATOR_URL"
+          test -n "$STAGING_PAYMENT_BOT_URL"
+          for service_url in "$STAGING_CHARGE_GENERATOR_URL" "$STAGING_PAYMENT_BOT_URL"; do
+            body="$(curl --fail --silent --show-error "$service_url/health")"
+            node -e 'const body = JSON.parse(process.argv[1]); if (body.ok !== true) process.exit(1);' "$body"
+          done
+      - name: Verify staging Telegram webhook
+        env:
+          STAGING_PAYMENT_BOT_URL: ${{ vars.STAGING_PAYMENT_BOT_URL }}
+          STAGING_TELEGRAM_BOT_TOKEN: ${{ secrets.STAGING_TELEGRAM_BOT_TOKEN }}
+        run: |
+          info="$(curl --fail --silent --show-error "https://api.telegram.org/bot${STAGING_TELEGRAM_BOT_TOKEN}/getWebhookInfo")"
+          node -e '
+            const info = JSON.parse(process.argv[1]);
+            const expected = process.argv[2];
+            if (info.ok !== true || info.result?.url !== expected) {
+              console.error(JSON.stringify(info, null, 2));
+              process.exit(1);
+            }
+          ' "$info" "$STAGING_PAYMENT_BOT_URL"

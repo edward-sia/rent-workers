@@ -1,4 +1,5 @@
 {
+  "$schema": "../node_modules/wrangler/config-schema.json",
   "name": "charge-generator",
   "main": "src/index.ts",
   "compatibility_date": "2026-04-26",
@@ -13,5 +14,16 @@
     "traces": {
       "enabled": true
     }
-	}
+	},
+  "env": {
+    "staging": {
+      "name": "charge-generator-staging",
+      "vars": {
+        "AIRTABLE_BASE_ID": "appzRYFa1yW5pQDEW"
+      },
+      "triggers": {
+        "crons": ["0 0 15 * *"]
+      }
+    }
+  }
 }

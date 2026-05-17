@@ -36,6 +36,7 @@ From the repo root:
 | `npm run test -- charge-generator` | Run this worker's tests |
 | `npm run test` | Run all workspace tests |
 | `npm run build` | Dry-run builds for deployable workers |
+| `npm run build:staging` | Dry-run staging Wrangler environments |
 
 ## Secrets
 

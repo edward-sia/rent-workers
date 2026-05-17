@@ -13,6 +13,8 @@
     "test": "vitest run --passWithNoTests",
     "test:watch": "vitest",
     "build": "npm run build     --workspaces --if-present",
+    "build:staging": "npm run build --workspace charge-generator -- --env staging && npm run build --workspace payment-worker -- --env staging",
+    "deploy:staging": "npm run deploy --workspace charge-generator -- --env staging && npm run deploy --workspace payment-worker -- --env staging",
     "check:schema": "tsx scripts/check-airtable-schema.ts"
   },
   "devDependencies": {

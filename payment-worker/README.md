@@ -169,9 +169,11 @@ Open Telegram, find the bot, and send `/help`.
 |---|---|
 | `npm run dev` | Local dev with Wrangler |
 | `npm run deploy` | Deploy to Cloudflare |
+| `npm run deploy -- --env staging` | Deploy `payment-bot-staging` |
 | `npm run types` | Regenerate Worker binding types |
 | `npm run typecheck` | Type-check this worker |
 | `npm run build` | Wrangler deploy dry-run |
+| `npm run build -- --env staging` | Wrangler deploy dry-run against staging config |
 
 From the repo root:
 
@@ -202,6 +204,29 @@ npm run test -- payment-worker
 
 Integration tests run inside `@cloudflare/vitest-pool-workers` with Telegram and Airtable HTTP calls mocked. Tests must not hit the real Airtable API.
 
+## Staging
+
+The `staging` Wrangler environment deploys as `payment-bot-staging`.
+
+Staging config:
+
+| Binding / var | Value |
+|---|---|
+| `AIRTABLE_BASE_ID` | `appzRYFa1yW5pQDEW` |
+| `SESSION_KV` | `17e24003884e454dbd96d81acc37bf2d` |
+| Telegram bot | `@ChwqueudciBot` |
+
+Staging secrets are set separately:
+
+```bash
+npx wrangler secret put TELEGRAM_BOT_TOKEN --env staging
+npx wrangler secret put TELEGRAM_WEBHOOK_SECRET --env staging
+npx wrangler secret put AIRTABLE_TOKEN --env staging
+npx wrangler secret put AUTHORIZED_USER_ID --env staging
+```
+
+The staging deploy workflow registers the Telegram webhook automatically after deployment.
+
 ## Expected Phase 4 File Layout
 
 ```text
@@ -229,7 +254,8 @@ tsconfig.json
 
 ## Operational Notes
 
-- Non-POST requests return a lightweight "payment-bot is running" banner for health checks.
+- Non-POST requests return a lightweight "payment-bot is running" banner.
+- `GET /health` returns `{"ok":true,"service":"payment-bot"}` for non-mutating smoke tests.
 - POST requests fail closed with `401` when `TELEGRAM_WEBHOOK_SECRET` is missing, shorter than 16 characters, or does not match Telegram's header.
 - grammy user authorization still happens inside the bot and rejects Telegram users whose ID does not match `AUTHORIZED_USER_ID`.
 - Sessions use the `session:{userId}` KV key and a 3600 second TTL.
