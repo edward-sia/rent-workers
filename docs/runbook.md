@@ -39,7 +39,8 @@ Check:
 3. GitHub Environment `production` exists and the deployment was approved.
 4. Environment secrets exist: `CLOUDFLARE_API_TOKEN`, `CLOUDFLARE_ACCOUNT_ID`, `PRODUCTION_TELEGRAM_BOT_TOKEN`, `PRODUCTION_TELEGRAM_WEBHOOK_SECRET`.
 5. Environment variables exist: `PRODUCTION_CHARGE_GENERATOR_URL`, `PRODUCTION_PAYMENT_BOT_URL`.
-6. Cloudflare production Worker secrets exist for both Workers. See `docs/production-cicd.md`.
+6. If a production Worker route is behind Cloudflare Access, environment secrets exist: `PRODUCTION_CF_ACCESS_CLIENT_ID`, `PRODUCTION_CF_ACCESS_CLIENT_SECRET`.
+7. Cloudflare production Worker secrets exist for both Workers. See `docs/production-cicd.md`.
 
 Local config check:
 
@@ -53,6 +54,8 @@ Smoke endpoint check:
 curl https://charge-generator.<subdomain>.workers.dev/health
 curl https://payment-bot.<subdomain>.workers.dev/health
 ```
+
+If the smoke test logs show `Expected JSON` with an HTML body or a 302 login response, the endpoint is likely protected by Cloudflare Access. Add an Access service token to the Access application policy, then set `PRODUCTION_CF_ACCESS_CLIENT_ID` and `PRODUCTION_CF_ACCESS_CLIENT_SECRET` in the GitHub `production` environment.
 
 ## charge-generator did not run on the 15th
 
