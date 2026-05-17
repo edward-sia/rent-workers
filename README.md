@@ -7,7 +7,7 @@ npm-workspaces monorepo for Cloudflare Workers that automate rent management for
 | Path | What it is | Status |
 |---|---|---|
 | [`packages/airtable-client/`](./packages/airtable-client/) | Shared Airtable REST client with Zod validation, pagination, retries, and timeouts | Used by both workers |
-| [`charge-generator/`](./charge-generator/) | Monthly cron Worker that creates rent charges and posts a Discord summary | Productionized |
+| [`charge-generator/`](./charge-generator/) | Cron Worker that creates monthly rent charges and posts Discord summaries/reminders | Productionized |
 | [`payment-worker/`](./payment-worker/) | Telegram webhook Worker for recording tenant payments | Productionized |
 | [`scripts/check-airtable-schema.ts`](./scripts/check-airtable-schema.ts) | Airtable schema-drift check used locally and by CI | Added in Phase 5 |
 | [`docs/superpowers/`](./docs/superpowers/) | Approved productionization spec and implementation plan | Source of truth for remaining phases |
@@ -50,7 +50,14 @@ cd payment-worker && npm run dev
 
 ## Production Setup Notes
 
-`charge-generator` requires a high-entropy bearer token for manual `/run` requests:
+`charge-generator` runs two scheduled jobs:
+
+| Cron | Purpose |
+|---|---|
+| `0 0 15 * *` | Create next-month rent Charges and post a Discord summary |
+| `0 22 * * *` | Check Airtable for Charges due today through the next 7 days and post a Discord reminder when any are found |
+
+It requires a high-entropy bearer token for manual `/run` requests:
 
 ```bash
 cd charge-generator

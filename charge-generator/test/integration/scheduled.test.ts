@@ -13,6 +13,8 @@ const AT_ORIGIN = 'https://api.airtable.com';
 const DISCORD_ORIGIN = 'https://discord.test';
 const TENANCIES = 'tblvVmo12VikITRH6';
 const CHARGES = 'tblNCw6ZxspNxiKCu';
+const MONTHLY_CRON = '0 0 15 * *';
+const DUE_REMINDER_CRON = '0 22 * * *';
 
 beforeEach(() => {
   fetchMock.activate();
@@ -43,7 +45,27 @@ function parseBody(body: unknown): any {
 
 async function runScheduled() {
   const ctx = createExecutionContext();
-  await worker.scheduled(createScheduledController(), env as Env, ctx);
+  await worker.scheduled(
+    createScheduledController({
+      cron: MONTHLY_CRON,
+      scheduledTime: Date.UTC(2026, 3, 15),
+    }),
+    env as Env,
+    ctx,
+  );
+  await waitOnExecutionContext(ctx);
+}
+
+async function runDueReminder() {
+  const ctx = createExecutionContext();
+  await worker.scheduled(
+    createScheduledController({
+      cron: DUE_REMINDER_CRON,
+      scheduledTime: Date.UTC(2026, 4, 5),
+    }),
+    env as Env,
+    ctx,
+  );
   await waitOnExecutionContext(ctx);
 }
 
@@ -314,5 +336,66 @@ describe('scheduled handler', () => {
     await runScheduled();
 
     expect(tenAttempts).toBe(2);
+  });
+
+  it('daily due reminder posts charges due in the next 7 days', async () => {
+    let chargePath = '';
+    fetchMock
+      .get(AT_ORIGIN)
+      .intercept({
+        path: (path) => {
+          chargePath = path;
+          return path.startsWith(`/v0/appTEST/${CHARGES}?`);
+        },
+      })
+      .reply(200, {
+        records: [
+          {
+            id: 'recDue1',
+            fields: {
+              'Due Date': '2026-05-05',
+              Status: 'Unpaid',
+            },
+          },
+          {
+            id: 'recDue2',
+            fields: {
+              'Due Date': '2026-05-10',
+              Status: 'Partial',
+            },
+          },
+        ],
+      });
+
+    const discordPayloads = mockDiscord();
+
+    await runDueReminder();
+
+    const chargeUrl = new URL(`https://airtable.test${chargePath}`);
+    expect(chargeUrl.searchParams.get('filterByFormula')).toBe(
+      [
+        'AND(',
+        '{Due Date} != BLANK(),',
+        "IS_AFTER({Due Date}, DATEADD(TODAY(), -1, 'days')),",
+        "IS_BEFORE({Due Date}, DATEADD(TODAY(), 8, 'days')),",
+        "OR({Status} = BLANK(), {Status} = 'Unpaid', {Status} = 'Partial', {Status} = 'Overdue')",
+        ')',
+      ].join(''),
+    );
+    expect(chargeUrl.searchParams.get('sort[0][field]')).toBe('Due Date');
+    expect(chargeUrl.searchParams.get('sort[0][direction]')).toBe('asc');
+    expect(discordPayloads[0].embeds[0].title).toBe('Rent Due Soon');
+    expect(discordPayloads[0].embeds[0].fields[0].name).toBe('Due in the next 7 days (2)');
+    expect(discordPayloads[0].embeds[0].fields[0].value).toContain('charge recDue1 - due 2026-05-05 - status Unpaid');
+    expect(discordPayloads[0].embeds[0].fields[0].value).toContain('charge recDue2 - due 2026-05-10 - status Partial');
+  });
+
+  it('daily due reminder is quiet when no charges are due soon', async () => {
+    fetchMock
+      .get(AT_ORIGIN)
+      .intercept({ path: new RegExp(`/v0/appTEST/${CHARGES}\\?.*`) })
+      .reply(200, { records: [] });
+
+    await runDueReminder();
   });
 });

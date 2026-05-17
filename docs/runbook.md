@@ -18,6 +18,26 @@ Operational notes for the productionized Workers.
 
 Manual reruns are idempotent. Existing charges for the same tenancy and period are skipped.
 
+## Due-soon reminder did not arrive
+
+The daily due-soon reminder runs from `charge-generator` at:
+
+```text
+0 22 * * *
+```
+
+This is 22:00 UTC, which is usually morning in Australia/Melbourne. The reminder is intentionally quiet when no matching Charges exist.
+
+Check:
+
+1. Cloudflare dashboard -> `charge-generator` -> Logs for `[due reminder]`.
+2. `charge-generator/wrangler.jsonc` still includes the daily cron.
+3. Airtable has Charges with `Due Date` from today through the next 7 days.
+4. Matching Charges are not `Paid`; blank, `Unpaid`, `Partial`, and `Overdue` statuses are included.
+5. `DISCORD_WEBHOOK_URL` is still a valid Worker secret.
+
+If logs show `due=0 discord=skipped`, the worker ran but found nothing to notify. If logs show `discord=false`, fix or rotate the Discord webhook secret. Due-soon Discord reminders identify matching Airtable Charge records by record ID, due date, and status; they intentionally omit tenant labels and rent amounts.
+
 ## Manual `/run` returns 401
 
 `/run` now fails closed unless the request includes a valid bearer token.
@@ -73,11 +93,11 @@ Fix:
 
 ## Discord webhook failed
 
-Discord notification failures are non-fatal. Charges may already have been created even when the Discord webhook returns 5xx.
+Discord notification failures are non-fatal. Charges may already have been created even when the monthly summary webhook returns 5xx. Due-soon reminder reads may also have succeeded even when the reminder webhook fails.
 
 Check:
 
-1. Cloudflare logs for `[Discord] webhook failed`.
+1. Cloudflare logs for `[Discord] webhook failed` or `[Discord] due reminder webhook failed`.
 2. The Worker secret `DISCORD_WEBHOOK_URL`.
 3. The Discord channel webhook still exists.
 

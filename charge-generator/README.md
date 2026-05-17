@@ -1,10 +1,12 @@
 # charge-generator
 
-Cloudflare Worker that creates monthly rent charge records in Airtable and notifies Discord.
+Cloudflare Worker that creates monthly rent charge records in Airtable and sends Discord notifications.
 
 ## What It Does
 
 Runs on the 15th of each month at midnight UTC and generates rent charges for the following month across all active tenancies. It is idempotent: if a charge already exists for a tenancy and period, that tenancy is skipped.
+
+Runs a second daily cron at 22:00 UTC to check Airtable for Charges due today through the next 7 days. If any unpaid, partial, overdue, or blank-status Charges are found, it posts a Discord reminder. If none are due soon, it logs the empty check and stays quiet.
 
 Manual `/run` requests are protected by a bearer token.
 
@@ -18,6 +20,13 @@ Cron fires on the 15th
   -> Create missing Charge records
   -> Post Discord summary
   -> Log counts/errors to Cloudflare
+
+Daily due-reminder cron fires
+  -> Fetch Charges due today through the next 7 days
+  -> Exclude paid Charges
+  -> Sort by Due Date
+  -> Post Discord reminder only when matching Charges exist
+  -> Log due count and Discord status
 ```
 
 ## Architecture
@@ -25,14 +34,18 @@ Cron fires on the 15th
 ```mermaid
 flowchart TD
     CRON["CF Cron: 0 0 15 * *"] --> WORKER["charge-generator Worker"]
+    DUECRON["CF Cron: 0 22 * * *"] --> WORKER
     RUN["GET /run + Bearer RUN_TOKEN"] --> WORKER
     WORKER --> AUTH["requireBearer()"]
     WORKER --> GEN["generateCharges()"]
+    WORKER --> REMIND["notifyChargesDueSoon()"]
     GEN --> CLIENT["@rent/airtable-client"]
+    REMIND --> CLIENT
     CLIENT --> TEN["Airtable Tenancies"]
     CLIENT --> CHG["Airtable Charges"]
     GEN --> DUE["resolveDueDate()"]
     GEN --> DISCORD["notifyDiscord()"]
+    REMIND --> DISCORD2["notifyDueSoonDiscord()"]
 ```
 
 ## Airtable Schema
@@ -43,6 +56,15 @@ flowchart TD
 | Charges | `tblNCw6ZxspNxiKCu` |
 
 Tenancy fields read: `Label`, `Monthly Rent`, `Start Date`, `End Date`, `Due Day`.
+
+Due-reminder Charge fields read: `Due Date`, `Status`.
+
+Due-reminder filter:
+
+- `Due Date` is not blank.
+- `Due Date` is today through the next 7 days.
+- `Status` is blank, `Unpaid`, `Partial`, or `Overdue`.
+- Results are sorted by `Due Date` ascending.
 
 Charge fields written:
 
@@ -102,7 +124,7 @@ Returns `Done — check Discord` on success and `401` when the bearer is missing
 
 ## Notification and Log Privacy
 
-Discord summaries and Cloudflare logs are intentionally minimized. They include the period, created/skipped/error counts, status codes, and stable Airtable record IDs such as tenancy or charge IDs. They do not include tenant labels, rent amounts, or raw upstream response bodies.
+Discord summaries and Cloudflare logs are intentionally minimized. They include the period, due dates, created/skipped/error counts, statuses, status codes, and stable Airtable record IDs such as tenancy or charge IDs. They do not include tenant labels, rent amounts, or raw upstream response bodies.
 
 ## Testing
 
@@ -119,6 +141,7 @@ Integration tests run inside `@cloudflare/vitest-pool-workers` and cover:
 - partial Airtable create failures
 - Discord webhook failure being non-fatal
 - Airtable read retry behavior
+- daily due-reminder filtering, sorting, notification, and quiet empty checks
 - `/run` bearer auth
 
 Known test-tooling note: the current Workers Vitest pool dependency falls back to its bundled `workerd` compatibility date during tests. The production Wrangler dry-run still uses the worker's configured `compatibility_date`.
@@ -129,6 +152,7 @@ Known test-tooling note: the current Workers Vitest pool dependency falls back t
 src/
   index.ts     -- Worker entrypoint and route/cron wiring
   charges.ts   -- charge-generation orchestration
+  due-reminders.ts -- daily due-soon Airtable query and Discord reminder
   due-date.ts  -- due date resolver
   discord.ts   -- Discord summary notification
   auth.ts      -- /run bearer auth

@@ -10,6 +10,7 @@ STOP. Cloudflare Workers APIs, Wrangler config, and platform limits change over 
 |---|---|
 | `src/index.ts` | Worker entrypoint: scheduled handler and `/run` fetch route |
 | `src/charges.ts` | Charge-generation orchestration |
+| `src/due-reminders.ts` | Daily due-soon Airtable query and Discord reminder |
 | `src/due-date.ts` | Pure due-date resolver |
 | `src/discord.ts` | Discord summary webhook |
 | `src/auth.ts` | `/run` bearer-token guard |
@@ -17,6 +18,13 @@ STOP. Cloudflare Workers APIs, Wrangler config, and platform limits change over 
 Airtable I/O lives in the shared workspace package `@rent/airtable-client`; do not reintroduce local Airtable fetch helpers in this worker.
 
 Discord notifications and Cloudflare logs must stay minimized: use counts, status codes, and stable Airtable record IDs, not tenant labels, rent amounts, or raw upstream response bodies.
+
+Scheduled jobs:
+
+| Cron | Behavior |
+|---|---|
+| `0 0 15 * *` | Generate next-month rent Charges and post the monthly Discord summary |
+| `0 22 * * *` | Read Charges due today through the next 7 days and post a Discord reminder only when matches exist |
 
 ## Commands
 

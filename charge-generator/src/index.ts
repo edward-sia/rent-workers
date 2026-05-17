@@ -1,5 +1,9 @@
 import { requireBearer } from './auth';
 import { generateCharges } from './charges';
+import { notifyChargesDueSoon } from './due-reminders';
+
+const MONTHLY_CHARGE_CRON = '0 0 15 * *';
+const DAILY_DUE_REMINDER_CRON = '0 22 * * *';
 
 export interface Env {
   AIRTABLE_TOKEN: string;
@@ -9,8 +13,17 @@ export interface Env {
 }
 
 export default {
-  async scheduled(_event: ScheduledController, env: Env, ctx: ExecutionContext) {
-    ctx.waitUntil(generateCharges(env));
+  async scheduled(event: ScheduledController, env: Env, ctx: ExecutionContext) {
+    if (event.cron === DAILY_DUE_REMINDER_CRON) {
+      ctx.waitUntil(notifyChargesDueSoon(env));
+      return;
+    }
+
+    if (event.cron !== MONTHLY_CHARGE_CRON) {
+      console.warn(`[scheduled] unexpected cron="${event.cron}", running monthly charge generation`);
+    }
+
+    ctx.waitUntil(generateCharges(env, new Date(event.scheduledTime)));
   },
 
   async fetch(request: Request, env: Env): Promise<Response> {
