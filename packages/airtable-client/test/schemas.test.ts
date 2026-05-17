@@ -41,6 +41,14 @@ describe('ChargeSchema', () => {
     });
     expect(parsed.Tenancy).toEqual(['rec123']);
   });
+
+  it('accepts Airtable Due status for unpaid charges', () => {
+    const parsed = ChargeSchema.parse({
+      Label: 'X',
+      Status: 'Due',
+    });
+    expect(parsed.Status).toBe('Due');
+  });
 });
 
 describe('PaymentSchema', () => {

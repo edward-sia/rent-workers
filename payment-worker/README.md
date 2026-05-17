@@ -63,6 +63,8 @@ The Worker uses `@rent/airtable-client` schemas:
 | `ChargeSchema` | Reading `Label`, `Balance`, `Status`, `Due Date`, `Tenancy` |
 | `PaymentSchema` | Validating Payment create responses |
 
+Outstanding charges may have Airtable `Status` values `Due`, `Unpaid`, `Partial`, or `Overdue`; `Paid` charges are filtered out before the wizard shows charge choices.
+
 Payment fields written:
 
 | Field | Value |

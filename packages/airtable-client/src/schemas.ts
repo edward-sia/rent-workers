@@ -16,7 +16,7 @@ export const ChargeSchema = z.object({
   'Due Date': z.string().optional(),
   Amount:     z.number().optional(),
   Balance:    z.number().optional(),
-  Status:     z.enum(['Unpaid', 'Partial', 'Paid', 'Overdue']).optional(),
+  Status:     z.enum(['Due', 'Unpaid', 'Partial', 'Paid', 'Overdue']).optional(),
   Type:       z.string().optional(),
   Tenancy:    z.array(z.string()).optional(),
 });
