@@ -81,10 +81,12 @@ npm run deploy
 |---|---|
 | `npm run dev` | Local dev with scheduled-test support |
 | `npm run deploy` | Deploy to Cloudflare |
+| `npm run deploy -- --env=""` | Deploy production explicitly |
 | `npm run deploy -- --env staging` | Deploy `charge-generator-staging` |
 | `npm run cf-typegen` | Regenerate Worker binding types |
 | `npm run typecheck` | Type-check this worker |
 | `npm run build` | Wrangler deploy dry-run |
+| `npm run build -- --env=""` | Wrangler deploy dry-run against production config explicitly |
 | `npm run build -- --env staging` | Wrangler deploy dry-run against staging config |
 
 From the repo root:

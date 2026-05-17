@@ -38,6 +38,7 @@ npm run lint
 npm run test
 npm run build
 npm run build:staging
+npm run build:production
 npm run check:schema
 ```
 
@@ -91,6 +92,7 @@ GitHub repository secrets for the nightly schema check:
 |---|---|
 | `.github/workflows/ci.yml` | Typecheck, lint, test, and build on push/PR |
 | `.github/workflows/deploy-staging.yml` | Deploy both Workers to staging after `main` is updated, then smoke test `/health` and Telegram webhook registration |
+| `.github/workflows/deploy-production.yml` | Manual, approval-gated production deploy from `main` |
 | `.github/workflows/schema-check.yml` | Nightly and manual Airtable schema-drift check |
 
 ## Staging
@@ -106,6 +108,12 @@ Staging uses separate Cloudflare Worker names, a separate Airtable base, a separ
 | Payment KV namespace | `RENT_STAGING_KV` / `17e24003884e454dbd96d81acc37bf2d` |
 
 See [`docs/staging-cicd.md`](./docs/staging-cicd.md) for the GitHub Environment variables/secrets and Cloudflare secret setup.
+
+## Production Deploy
+
+Production deploy is manual and approval-gated. It must run from `main` through `.github/workflows/deploy-production.yml`.
+
+See [`docs/production-cicd.md`](./docs/production-cicd.md) for the GitHub Environment variables/secrets, Cloudflare secret setup, and run instructions.
 
 ## Documentation Policy
 

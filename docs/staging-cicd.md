@@ -95,4 +95,4 @@ npm run build:staging
 
 ## Production Policy
 
-Production deploy remains manual for now. The staging lane gives confidence without allowing every `main` push to mutate production Airtable or production Telegram behavior.
+Production deploy is manual and approval-gated. See `docs/production-cicd.md`.

@@ -28,6 +28,32 @@ curl https://charge-generator-staging.<subdomain>.workers.dev/health
 curl https://payment-bot-staging.<subdomain>.workers.dev/health
 ```
 
+## Production deploy failed
+
+The production deploy workflow is `.github/workflows/deploy-production.yml`.
+
+Check:
+
+1. The workflow ran from branch `main`.
+2. The manual `confirm` input was exactly `deploy-production`.
+3. GitHub Environment `production` exists and the deployment was approved.
+4. Environment secrets exist: `CLOUDFLARE_API_TOKEN`, `CLOUDFLARE_ACCOUNT_ID`, `PRODUCTION_TELEGRAM_BOT_TOKEN`, `PRODUCTION_TELEGRAM_WEBHOOK_SECRET`.
+5. Environment variables exist: `PRODUCTION_CHARGE_GENERATOR_URL`, `PRODUCTION_PAYMENT_BOT_URL`.
+6. Cloudflare production Worker secrets exist for both Workers. See `docs/production-cicd.md`.
+
+Local config check:
+
+```bash
+npm run build:production
+```
+
+Smoke endpoint check:
+
+```bash
+curl https://charge-generator.<subdomain>.workers.dev/health
+curl https://payment-bot.<subdomain>.workers.dev/health
+```
+
 ## charge-generator did not run on the 15th
 
 1. Check Cloudflare dashboard -> `charge-generator` -> Logs.

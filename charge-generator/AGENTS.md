@@ -37,6 +37,7 @@ From the repo root:
 | `npm run test` | Run all workspace tests |
 | `npm run build` | Dry-run builds for deployable workers |
 | `npm run build:staging` | Dry-run staging Wrangler environments |
+| `npm run build:production` | Dry-run top-level production Wrangler config |
 
 ## Secrets
 

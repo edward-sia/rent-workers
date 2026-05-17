@@ -10,6 +10,7 @@ npm run build
 ```
 
 Use `npm run build:staging` after changing Wrangler environments or staging CI/CD.
+Use `npm run build:production` after changing production deploy workflows or top-level Wrangler production config.
 
 `charge-generator` owns scheduled rent charge creation and Discord notifications. Its worker-specific guidance lives in `charge-generator/AGENTS.md`.
 
