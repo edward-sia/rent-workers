@@ -171,10 +171,12 @@ Open Telegram, find the bot, and send `/help`.
 |---|---|
 | `npm run dev` | Local dev with Wrangler |
 | `npm run deploy` | Deploy to Cloudflare |
+| `npm run deploy -- --env=""` | Deploy production explicitly |
 | `npm run deploy -- --env staging` | Deploy `payment-bot-staging` |
 | `npm run types` | Regenerate Worker binding types |
 | `npm run typecheck` | Type-check this worker |
 | `npm run build` | Wrangler deploy dry-run |
+| `npm run build -- --env=""` | Wrangler deploy dry-run against production config explicitly |
 | `npm run build -- --env staging` | Wrangler deploy dry-run against staging config |
 
 From the repo root:
