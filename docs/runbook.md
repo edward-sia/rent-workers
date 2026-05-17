@@ -2,6 +2,32 @@
 
 Operational notes for the productionized Workers.
 
+## Staging deploy failed
+
+The staging deploy workflow is `.github/workflows/deploy-staging.yml`.
+
+Check:
+
+1. GitHub Environment `staging` exists.
+2. Environment secrets exist: `CLOUDFLARE_API_TOKEN`, `CLOUDFLARE_ACCOUNT_ID`, `STAGING_TELEGRAM_BOT_TOKEN`, `STAGING_TELEGRAM_WEBHOOK_SECRET`.
+3. Environment variables exist: `STAGING_CHARGE_GENERATOR_URL`, `STAGING_PAYMENT_BOT_URL`.
+4. Cloudflare staging Worker secrets exist for both Workers. See `docs/staging-cicd.md`.
+5. `payment-worker/wrangler.toml` still points staging `SESSION_KV` to `17e24003884e454dbd96d81acc37bf2d`.
+6. `charge-generator/wrangler.jsonc` and `payment-worker/wrangler.toml` still point staging `AIRTABLE_BASE_ID` to `appzRYFa1yW5pQDEW`.
+
+Local config check:
+
+```bash
+npm run build:staging
+```
+
+Smoke endpoint check:
+
+```bash
+curl https://charge-generator-staging.<subdomain>.workers.dev/health
+curl https://payment-bot-staging.<subdomain>.workers.dev/health
+```
+
 ## charge-generator did not run on the 15th
 
 1. Check Cloudflare dashboard -> `charge-generator` -> Logs.

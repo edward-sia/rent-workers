@@ -21,6 +21,17 @@ describe('webhook auth', () => {
     expect(await res.text()).toBe('payment-bot is running');
   });
 
+  it('returns a non-mutating health payload without webhook auth', async () => {
+    const res = await SELF.fetch('https://worker.test/health');
+
+    expect(res.status).toBe(200);
+    expect(res.headers.get('content-type')).toContain('application/json');
+    expect(await res.json()).toEqual({
+      ok: true,
+      service: 'payment-bot',
+    });
+  });
+
   it('rejects POST without the Telegram webhook secret header', async () => {
     const res = await SELF.fetch('https://worker.test/', {
       method: 'POST',

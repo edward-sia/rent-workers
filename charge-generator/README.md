@@ -81,9 +81,11 @@ npm run deploy
 |---|---|
 | `npm run dev` | Local dev with scheduled-test support |
 | `npm run deploy` | Deploy to Cloudflare |
+| `npm run deploy -- --env staging` | Deploy `charge-generator-staging` |
 | `npm run cf-typegen` | Regenerate Worker binding types |
 | `npm run typecheck` | Type-check this worker |
 | `npm run build` | Wrangler deploy dry-run |
+| `npm run build -- --env staging` | Wrangler deploy dry-run against staging config |
 
 From the repo root:
 
@@ -99,6 +101,26 @@ curl -H "Authorization: Bearer $RUN_TOKEN" \
 ```
 
 Returns `Done — check Discord` on success and `401` when the bearer is missing, too short, or incorrect.
+
+## Health Check
+
+`GET /health` returns a non-mutating JSON payload for staging smoke tests:
+
+```json
+{"ok":true,"service":"charge-generator"}
+```
+
+## Staging
+
+The `staging` Wrangler environment deploys as `charge-generator-staging` and points `AIRTABLE_BASE_ID` at `appzRYFa1yW5pQDEW`.
+
+Staging secrets are set separately:
+
+```bash
+npx wrangler secret put AIRTABLE_TOKEN --env staging
+npx wrangler secret put DISCORD_WEBHOOK_URL --env staging
+npx wrangler secret put RUN_TOKEN --env staging
+```
 
 ## Notification and Log Privacy
 
@@ -119,6 +141,7 @@ Integration tests run inside `@cloudflare/vitest-pool-workers` and cover:
 - partial Airtable create failures
 - Discord webhook failure being non-fatal
 - Airtable read retry behavior
+- `/health` smoke endpoint
 - `/run` bearer auth
 
 Known test-tooling note: the current Workers Vitest pool dependency falls back to its bundled `workerd` compatibility date during tests. The production Wrangler dry-run still uses the worker's configured `compatibility_date`.

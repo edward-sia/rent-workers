@@ -5,6 +5,14 @@ import type { Env } from './types';
 
 export default {
   async fetch(request: Request, env: Env): Promise<Response> {
+    const url = new URL(request.url);
+    if (request.method === 'GET' && url.pathname === '/health') {
+      return Response.json({
+        ok: true,
+        service: 'payment-bot',
+      });
+    }
+
     if (request.method !== 'POST') {
       return new Response('payment-bot is running', { status: 200 });
     }

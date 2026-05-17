@@ -20,3 +20,13 @@ AIRTABLE_BASE_ID = "app6He8xRaUzNBTDl"
 [[kv_namespaces]]
 binding = "SESSION_KV"
 id = "220ffe76ec364d6eaf8726ed01e6495b"
+
+[env.staging]
+name = "payment-bot-staging"
+
+[env.staging.vars]
+AIRTABLE_BASE_ID = "appzRYFa1yW5pQDEW"
+
+[[env.staging.kv_namespaces]]
+binding = "SESSION_KV"
+id = "17e24003884e454dbd96d81acc37bf2d"
