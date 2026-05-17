@@ -43,6 +43,7 @@ const payment = await client.create(
 - Serializes `fields[]` query params in Airtable's expected bracket notation.
 - Parses every returned record with the supplied Zod schema.
 - Includes field-path details in schema mismatch errors.
+- Accepts current Charge status values used by the Workers, including `Due`, `Unpaid`, `Partial`, `Paid`, and `Overdue`.
 - Applies a 10 second request timeout by default.
 - Retries network errors and 5xx responses up to two times.
 - Fails fast on 4xx responses.
