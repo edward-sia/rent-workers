@@ -21,6 +21,8 @@ Set these environment secrets:
 | `CLOUDFLARE_ACCOUNT_ID` | Cloudflare account id |
 | `PRODUCTION_TELEGRAM_BOT_TOKEN` | Production Telegram bot token |
 | `PRODUCTION_TELEGRAM_WEBHOOK_SECRET` | Production Telegram webhook `secret_token`; must match the Cloudflare `TELEGRAM_WEBHOOK_SECRET` on `payment-bot` |
+| `PRODUCTION_CF_ACCESS_CLIENT_ID` | Optional Cloudflare Access service-token client id for production smoke tests |
+| `PRODUCTION_CF_ACCESS_CLIENT_SECRET` | Optional Cloudflare Access service-token client secret for production smoke tests |
 
 Set these environment variables:
 
@@ -30,6 +32,8 @@ Set these environment variables:
 | `PRODUCTION_PAYMENT_BOT_URL` | `https://payment-bot.<subdomain>.workers.dev` |
 
 Do not store Airtable PATs, Discord webhooks, or Telegram bot tokens as plaintext GitHub variables.
+
+If a production Worker route is protected by Cloudflare Access, create an Access service token, allow that token in the relevant Access application policy, and set both `PRODUCTION_CF_ACCESS_CLIENT_ID` and `PRODUCTION_CF_ACCESS_CLIENT_SECRET`. The smoke test sends those headers to `/health` when both secrets are present.
 
 ## Cloudflare Production Secrets
 
@@ -72,7 +76,7 @@ The production workflow does:
 10. Deploy `charge-generator` to production.
 11. Deploy `payment-bot` to production.
 12. Register the production Telegram webhook to `PRODUCTION_PAYMENT_BOT_URL`.
-13. Smoke test both production `/health` endpoints.
+13. Smoke test both production `/health` endpoints, using Cloudflare Access service-token headers if configured.
 14. Verify Telegram webhook registration with `getWebhookInfo`.
 
 ## Manual Run

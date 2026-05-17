@@ -65,12 +65,36 @@ jobs:
         env:
           PRODUCTION_CHARGE_GENERATOR_URL: ${{ vars.PRODUCTION_CHARGE_GENERATOR_URL }}
           PRODUCTION_PAYMENT_BOT_URL: ${{ vars.PRODUCTION_PAYMENT_BOT_URL }}
+          PRODUCTION_CF_ACCESS_CLIENT_ID: ${{ secrets.PRODUCTION_CF_ACCESS_CLIENT_ID }}
+          PRODUCTION_CF_ACCESS_CLIENT_SECRET: ${{ secrets.PRODUCTION_CF_ACCESS_CLIENT_SECRET }}
         run: |
           test -n "$PRODUCTION_CHARGE_GENERATOR_URL"
           test -n "$PRODUCTION_PAYMENT_BOT_URL"
+          curl_headers=()
+          if [ -n "$PRODUCTION_CF_ACCESS_CLIENT_ID" ] || [ -n "$PRODUCTION_CF_ACCESS_CLIENT_SECRET" ]; then
+            test -n "$PRODUCTION_CF_ACCESS_CLIENT_ID"
+            test -n "$PRODUCTION_CF_ACCESS_CLIENT_SECRET"
+            curl_headers+=(
+              -H "CF-Access-Client-Id: $PRODUCTION_CF_ACCESS_CLIENT_ID"
+              -H "CF-Access-Client-Secret: $PRODUCTION_CF_ACCESS_CLIENT_SECRET"
+            )
+          fi
           for service_url in "$PRODUCTION_CHARGE_GENERATOR_URL" "$PRODUCTION_PAYMENT_BOT_URL"; do
-            body="$(curl --fail --silent --show-error "$service_url/health")"
-            node -e 'const body = JSON.parse(process.argv[1]); if (body.ok !== true) process.exit(1);' "$body"
+            body="$(curl --fail --silent --show-error "${curl_headers[@]}" "$service_url/health")"
+            node -e '
+              const body = process.argv[1];
+              let parsed;
+              try {
+                parsed = JSON.parse(body);
+              } catch {
+                console.error(`Expected JSON from ${process.argv[2]}, received: ${body.slice(0, 160)}`);
+                process.exit(1);
+              }
+              if (parsed.ok !== true) {
+                console.error(`Health check failed for ${process.argv[2]}: ${body}`);
+                process.exit(1);
+              }
+            ' "$body" "$service_url"
           done
       - name: Verify production Telegram webhook
         env:
