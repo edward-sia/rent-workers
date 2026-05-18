@@ -9,6 +9,8 @@ import {
   todayISO,
   yesterdayISO,
 } from './format';
+import { fetchReminderBuckets, listOutstandingChargesForTenancy } from './outstanding';
+import { formatReminderMessages } from './reminder';
 import { clearSession, getSession, setSession } from './session';
 import type { Env, WizardSession } from './types';
 
@@ -61,6 +63,7 @@ export function createBot(env: Env): Bot {
     await ctx.reply(
       `🏠 *New Haven Rent Bot*\n\n` +
       `/pay — Record a tenant payment\n` +
+      `/reminder — Show overdue and next-14-day outstanding payments\n` +
       `/cancel — Cancel current operation`,
       { parse_mode: 'Markdown' },
     );
@@ -69,6 +72,18 @@ export function createBot(env: Env): Bot {
   bot.command('cancel', async (ctx) => {
     await clearSession(ctx.from!.id, env.SESSION_KV);
     await ctx.reply('❌ Cancelled. Use /pay to start again.');
+  });
+
+  bot.command('reminder', async (ctx) => {
+    try {
+      const buckets = await fetchReminderBuckets(env);
+      for (const message of formatReminderMessages(buckets)) {
+        await ctx.reply(message, { parse_mode: 'Markdown' });
+      }
+    } catch (e) {
+      console.error(`[payment-bot] reminder failed: ${e instanceof Error ? e.message : String(e)}`);
+      await ctx.reply('Failed to load reminders. Check Worker logs for the Airtable error.');
+    }
   });
 
   bot.command('pay', async (ctx) => {
@@ -127,9 +142,7 @@ export function createBot(env: Env): Bot {
       },
     );
 
-    const charges = allCharges
-      .filter(charge => charge.fields.Tenancy?.includes(tenancyId))
-      .sort((a, b) => String(a.fields['Due Date'] ?? '').localeCompare(String(b.fields['Due Date'] ?? '')));
+    const charges = listOutstandingChargesForTenancy(allCharges, tenancyId);
 
     if (charges.length === 0) {
       await ctx.editMessageText(

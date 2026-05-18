@@ -167,6 +167,20 @@ curl "https://api.telegram.org/bot$TELEGRAM_BOT_TOKEN/setWebhook" \
 
 Then check Cloudflare -> `payment-bot` -> Logs. Repeated 401s from random clients can be ignored unless they come from Telegram after webhook registration.
 
+## `/reminder` output is empty or incorrect
+
+`/reminder` reads Airtable Charges and Tenancies through `@rent/airtable-client`. It includes charges with positive `Balance`, non-`Paid` status, and a `Due Date` that is either before today or from today through the next 14 days.
+
+Check:
+
+1. The charge has a positive `Balance`.
+2. The charge `Status` is `Due`, `Unpaid`, `Partial`, `Overdue`, or blank. `Paid` charges are intentionally hidden.
+3. The charge has a valid `Due Date`.
+4. The charge has a linked `Tenancy` record, and that tenancy still exists.
+5. `AIRTABLE_TOKEN` can read both Charges and Tenancies.
+
+If Airtable field names or status values changed, update `packages/airtable-client/src/schemas.ts`, the schema check script, tests, and this runbook together.
+
 ## Tests warn about compatibility date fallback
 
 The current `@cloudflare/vitest-pool-workers` dependency bundles an older local Workers runtime and may warn that it falls back from the configured compatibility date during tests.
