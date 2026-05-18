@@ -61,7 +61,7 @@ export function createBot(env: Env): Bot {
 
   bot.command(['start', 'help'], async (ctx) => {
     await ctx.reply(
-      `🏠 *New Haven Rent Bot*\n\n` +
+      `🏠 *Newhaven Rent Bot*\n\n` +
       `/pay — Record a tenant payment\n` +
       `/reminder — Show overdue and next-14-day outstanding payments\n` +
       `/cancel — Cancel current operation`,

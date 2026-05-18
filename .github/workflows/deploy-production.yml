@@ -70,15 +70,12 @@ jobs:
         run: |
           test -n "$PRODUCTION_CHARGE_GENERATOR_URL"
           test -n "$PRODUCTION_PAYMENT_BOT_URL"
-          curl_headers=()
-          if [ -n "$PRODUCTION_CF_ACCESS_CLIENT_ID" ] || [ -n "$PRODUCTION_CF_ACCESS_CLIENT_SECRET" ]; then
-            test -n "$PRODUCTION_CF_ACCESS_CLIENT_ID"
-            test -n "$PRODUCTION_CF_ACCESS_CLIENT_SECRET"
-            curl_headers+=(
-              -H "CF-Access-Client-Id: $PRODUCTION_CF_ACCESS_CLIENT_ID"
-              -H "CF-Access-Client-Secret: $PRODUCTION_CF_ACCESS_CLIENT_SECRET"
-            )
-          fi
+          test -n "$PRODUCTION_CF_ACCESS_CLIENT_ID"
+          test -n "$PRODUCTION_CF_ACCESS_CLIENT_SECRET"
+          curl_headers=(
+            -H "CF-Access-Client-Id: $PRODUCTION_CF_ACCESS_CLIENT_ID"
+            -H "CF-Access-Client-Secret: $PRODUCTION_CF_ACCESS_CLIENT_SECRET"
+          )
           for service_url in "$PRODUCTION_CHARGE_GENERATOR_URL" "$PRODUCTION_PAYMENT_BOT_URL"; do
             body="$(curl --fail --silent --show-error "${curl_headers[@]}" "$service_url/health")"
             node -e '

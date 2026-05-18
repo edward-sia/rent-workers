@@ -1,6 +1,6 @@
 # rent-workers
 
-npm-workspaces monorepo for Cloudflare Workers that automate rent management for the New Haven property.
+npm-workspaces monorepo for Cloudflare Workers that automate rent management for a list of properties.
 
 ## Layout
 
@@ -57,7 +57,7 @@ cd payment-worker && npm run dev
 
 ```bash
 cd charge-generator
-npx wrangler secret put RUN_TOKEN
+npx wrangler secret put RUN_TOKEN --env=""
 ```
 
 Manual run:
@@ -66,6 +66,18 @@ Manual run:
 curl -H "Authorization: Bearer $RUN_TOKEN" \
   https://charge-generator.<subdomain>.workers.dev/run
 ```
+
+The current production hostname is protected by Cloudflare Access, so production manual runs require the Access service-token headers as well:
+
+```bash
+curl \
+  -H "CF-Access-Client-Id: $CF_ACCESS_CLIENT_ID" \
+  -H "CF-Access-Client-Secret: $CF_ACCESS_CLIENT_SECRET" \
+  -H "Authorization: Bearer $RUN_TOKEN" \
+  https://charge-generator.<subdomain>.workers.dev/run
+```
+
+Access service-token headers prove the script may reach the Worker. `RUN_TOKEN` separately proves the request may execute the mutating `/run` job, so keep both for production manual runs.
 
 `payment-worker` requires a Telegram webhook secret. Generate a high-entropy value, store it as a Worker secret, then register the Telegram webhook with the same value:
 
@@ -113,7 +125,7 @@ See [`docs/staging-cicd.md`](./docs/staging-cicd.md) for the GitHub Environment 
 
 Production deploy is manual and approval-gated. It must run from `main` through `.github/workflows/deploy-production.yml`.
 
-See [`docs/production-cicd.md`](./docs/production-cicd.md) for the GitHub Environment variables/secrets, Cloudflare secret setup, and run instructions.
+See [`docs/production-cicd.md`](./docs/production-cicd.md) for the required GitHub Environment variables/secrets, Cloudflare Access service-token setup, Cloudflare Worker secrets, and run instructions.
 
 ## Documentation Policy
 
