@@ -102,6 +102,24 @@ curl -H "Authorization: Bearer $RUN_TOKEN" \
   https://charge-generator.<your-subdomain>.workers.dev/run
 ```
 
+The current production hostname is protected by Cloudflare Access, which runs before the Worker. Include both the Access service-token headers and the Worker bearer token:
+
+```bash
+curl \
+  -H "CF-Access-Client-Id: $CF_ACCESS_CLIENT_ID" \
+  -H "CF-Access-Client-Secret: $CF_ACCESS_CLIENT_SECRET" \
+  -H "Authorization: Bearer $RUN_TOKEN" \
+  https://charge-generator.<your-subdomain>.workers.dev/run
+```
+
+Test the Access headers against `/health` first; it should return `200` before you trigger `/run`.
+
+Production auth layers are intentionally separate:
+
+- Cloudflare Access email `Allow` policy lets an approved human browser reach the Worker.
+- Cloudflare Access service-token `Service Auth` policy lets CI and scripted calls reach the Worker.
+- `RUN_TOKEN` lets a request that already reached the Worker execute the mutating `/run` job.
+
 Returns `Done — check Discord` on success and `401` when the bearer is missing, too short, or incorrect.
 
 ## Health Check

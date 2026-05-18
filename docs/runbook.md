@@ -32,14 +32,22 @@ curl https://payment-bot-staging.<subdomain>.workers.dev/health
 
 The production deploy workflow is `.github/workflows/deploy-production.yml`.
 
+Production auth layers:
+
+| Layer | Used by | Failure shape |
+|---|---|---|
+| Cloudflare Access email `Allow` policy | Browser access for approved humans | Browser gets a Cloudflare login prompt or `403` |
+| Cloudflare Access service-token `Service Auth` policy | GitHub smoke tests and `curl` scripts | `curl` receives `302`/HTML before the Worker responds |
+| Worker `RUN_TOKEN` bearer check | Manual `/run` charge generation | Worker returns `401 Unauthorized` |
+
 Check:
 
 1. The workflow ran from branch `main`.
 2. The manual `confirm` input was exactly `deploy-production`.
 3. GitHub Environment `production` exists and the deployment was approved.
-4. Environment secrets exist: `CLOUDFLARE_API_TOKEN`, `CLOUDFLARE_ACCOUNT_ID`, `PRODUCTION_TELEGRAM_BOT_TOKEN`, `PRODUCTION_TELEGRAM_WEBHOOK_SECRET`.
+4. Environment secrets exist: `CLOUDFLARE_API_TOKEN`, `CLOUDFLARE_ACCOUNT_ID`, `PRODUCTION_TELEGRAM_BOT_TOKEN`, `PRODUCTION_TELEGRAM_WEBHOOK_SECRET`, `PRODUCTION_CF_ACCESS_CLIENT_ID`, `PRODUCTION_CF_ACCESS_CLIENT_SECRET`.
 5. Environment variables exist: `PRODUCTION_CHARGE_GENERATOR_URL`, `PRODUCTION_PAYMENT_BOT_URL`.
-6. If a production Worker route is behind Cloudflare Access, environment secrets exist: `PRODUCTION_CF_ACCESS_CLIENT_ID`, `PRODUCTION_CF_ACCESS_CLIENT_SECRET`.
+6. The Cloudflare Access service token is included in the production Access application policies with action `Service Auth`.
 7. Cloudflare production Worker secrets exist for both Workers. See `docs/production-cicd.md`.
 
 Local config check:
@@ -55,7 +63,7 @@ curl https://charge-generator.<subdomain>.workers.dev/health
 curl https://payment-bot.<subdomain>.workers.dev/health
 ```
 
-If the smoke test logs show `Expected JSON` with an HTML body or a 302 login response, the endpoint is likely protected by Cloudflare Access. Add an Access service token to the Access application policy, then set `PRODUCTION_CF_ACCESS_CLIENT_ID` and `PRODUCTION_CF_ACCESS_CLIENT_SECRET` in the GitHub `production` environment.
+If the smoke test logs show `Expected JSON` with an HTML body or a 302 login response, Cloudflare Access rejected the smoke-test request before it reached the Worker. Confirm `PRODUCTION_CF_ACCESS_CLIENT_ID` and `PRODUCTION_CF_ACCESS_CLIENT_SECRET` are set in the GitHub `production` environment, then confirm the same service token is allowed by the relevant Access application policy with action `Service Auth`.
 
 ## charge-generator did not run on the 15th
 
@@ -82,18 +90,49 @@ Check:
 - `RUN_TOKEN` exists as a Cloudflare Worker secret.
 - The token is at least 16 characters.
 - The request header is exactly `Authorization: Bearer <token>`.
+- If the response is `302` or HTML from `newhaven.cloudflareaccess.com`, Cloudflare Access blocked the request before it reached the Worker. Include valid Access service-token headers or update the Access policy.
+
+Test Cloudflare Access on the non-mutating health endpoint before rerunning charges:
+
+```bash
+curl --include \
+  -H "CF-Access-Client-Id: $CF_ACCESS_CLIENT_ID" \
+  -H "CF-Access-Client-Secret: $CF_ACCESS_CLIENT_SECRET" \
+  https://charge-generator.<subdomain>.workers.dev/health
+```
+
+Expected: `200` with `{"ok":true,"service":"charge-generator"}`.
+
+If this still returns `302`:
+
+- Confirm the local shell variables are set; GitHub Environment secrets are not automatically available in your terminal.
+- Confirm `CF_ACCESS_CLIENT_ID` is the Access service-token client id, usually ending in `.access`; it is not `RUN_TOKEN` and not a Cloudflare API token.
+- In Cloudflare Zero Trust, the Access application for `charge-generator.<subdomain>.workers.dev` must have a policy with action `Service Auth` that includes this service token.
+- Do not configure Access to read service tokens from the `Authorization` header for this Worker; the Worker already uses `Authorization: Bearer <RUN_TOKEN>`.
+
+If `/health` returns `200` with the Access headers but `/run` still returns `302`, inspect Cloudflare Access for a separate or more-specific application/path policy covering `/run`. The `/run` Access application/policy must also include the same service token with action `Service Auth`; authorizing only the health endpoint is not enough.
 
 Set or rotate the token:
 
 ```bash
 cd charge-generator
-npx wrangler secret put RUN_TOKEN
+npx wrangler secret put RUN_TOKEN --env=""
 ```
 
 Recommended value:
 
 ```bash
 openssl rand -hex 32
+```
+
+Manual run behind Cloudflare Access:
+
+```bash
+curl \
+  -H "CF-Access-Client-Id: $CF_ACCESS_CLIENT_ID" \
+  -H "CF-Access-Client-Secret: $CF_ACCESS_CLIENT_SECRET" \
+  -H "Authorization: Bearer $RUN_TOKEN" \
+  https://charge-generator.<subdomain>.workers.dev/run
 ```
 
 ## All charges errored
