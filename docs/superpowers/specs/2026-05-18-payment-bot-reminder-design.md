@@ -32,6 +32,8 @@ Before implementation, start from current `origin/main`. The local checkout used
 
 A charge can appear in only one section. A tenant can appear in both sections when they have overdue debt and another upcoming charge.
 
+Within each section, tenant groups are ordered by their earliest due date, and charge rows inside each tenant group are also ordered by due date.
+
 Example output:
 
 ```text

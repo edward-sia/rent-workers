@@ -180,6 +180,48 @@ describe('outstanding charge filtering', () => {
     ]);
   });
 
+  it('orders reminder tenant groups by earliest due date', () => {
+    const buckets = bucketOutstandingCharges({
+      today,
+      horizonDays: 14,
+      tenancies: [
+        tenancy('recA', 'Alpha Later'),
+        tenancy('recZ', 'Zulu Earlier'),
+      ],
+      charges: [
+        charge('recLater', {
+          Label: 'Later Rent',
+          Balance: 100,
+          Status: 'Unpaid',
+          'Due Date': '2026-05-30',
+          Tenancy: ['recA'],
+          Type: 'Rent',
+        }),
+        charge('recMiddle', {
+          Label: 'Middle Rent',
+          Balance: 100,
+          Status: 'Unpaid',
+          'Due Date': '2026-05-25',
+          Tenancy: ['recZ'],
+          Type: 'Rent',
+        }),
+        charge('recEarliest', {
+          Label: 'Earliest Rent',
+          Balance: 100,
+          Status: 'Unpaid',
+          'Due Date': '2026-05-20',
+          Tenancy: ['recZ'],
+          Type: 'Rent',
+        }),
+      ],
+    });
+
+    const groups = groupReminderChargesByTenant(buckets.dueSoon);
+
+    expect(groups.map((group) => group.tenancyId)).toEqual(['recZ', 'recA']);
+    expect(groups[0]?.charges.map((charge) => charge.chargeId)).toEqual(['recEarliest', 'recMiddle']);
+  });
+
   it('keeps pay charge selection charge-level and sorted by due date', () => {
     const rows = listOutstandingChargesForTenancy([
       charge('recC2', {

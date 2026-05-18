@@ -171,6 +171,8 @@ Then check Cloudflare -> `payment-bot` -> Logs. Repeated 401s from random client
 
 `/reminder` reads Airtable Charges and Tenancies through `@rent/airtable-client`. It includes charges with positive `Balance`, non-`Paid` status, and a `Due Date` that is either before today or from today through the next 14 days.
 
+Output is split into "Pay now" and "Due in next 14 days". Within each section, tenant groups are ordered by their earliest due date, and charge rows within each tenant are also due-date ordered.
+
 Check:
 
 1. The charge has a positive `Balance`.

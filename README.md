@@ -8,7 +8,7 @@ npm-workspaces monorepo for Cloudflare Workers that automate rent management for
 |---|---|---|
 | [`packages/airtable-client/`](./packages/airtable-client/) | Shared Airtable REST client with Zod validation, pagination, retries, and timeouts | Used by both workers |
 | [`charge-generator/`](./charge-generator/) | Monthly cron Worker that creates rent charges and posts a Discord summary | Productionized |
-| [`payment-worker/`](./payment-worker/) | Telegram webhook Worker for recording tenant payments and querying overdue/upcoming outstanding payments | Productionized |
+| [`payment-worker/`](./payment-worker/) | Telegram webhook Worker for recording tenant payments and due-date-sorted overdue/upcoming outstanding payment reminders | Productionized |
 | [`scripts/check-airtable-schema.ts`](./scripts/check-airtable-schema.ts) | Airtable schema-drift check used locally and by CI | Added in Phase 5 |
 | [`docs/superpowers/`](./docs/superpowers/) | Approved productionization spec and implementation plan | Source of truth for remaining phases |
 
