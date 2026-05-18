@@ -1,6 +1,6 @@
 # rent-workers
 
-npm-workspaces monorepo for Cloudflare Workers that automate rent management for the New Haven property.
+npm-workspaces monorepo for Cloudflare Workers that automate rent management for a list of properties.
 
 ## Layout
 

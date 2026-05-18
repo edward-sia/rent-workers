@@ -3222,7 +3222,7 @@ git commit -m "ci: add nightly Airtable schema-drift check with Discord alert"
 ```markdown
 # rent-workers
 
-npm-workspaces monorepo: two Cloudflare Workers + a shared Airtable client. Together they automate rent management for the New Haven property.
+npm-workspaces monorepo: two Cloudflare Workers + a shared Airtable client. Together they automate rent management for a list of properties.
 
 ## Layout
 
