@@ -129,7 +129,12 @@ export function groupReminderChargesByTenant(charges: ReminderCharge[]): Reminde
     }
   }
 
-  return [...groups.values()].sort((a, b) => a.tenantLabel.localeCompare(b.tenantLabel));
+  return [...groups.values()]
+    .map((group) => ({
+      ...group,
+      charges: [...group.charges].sort(compareReminderCharges),
+    }))
+    .sort(compareReminderTenantGroups);
 }
 
 export function listOutstandingChargesForTenancy(
@@ -150,6 +155,15 @@ function compareReminderCharges(a: ReminderCharge, b: ReminderCharge): number {
   return a.dueDate.localeCompare(b.dueDate) ||
     a.tenantLabel.localeCompare(b.tenantLabel) ||
     a.rowLabel.localeCompare(b.rowLabel);
+}
+
+function compareReminderTenantGroups(a: ReminderTenantGroup, b: ReminderTenantGroup): number {
+  const aFirstDueDate = a.charges[0]?.dueDate ?? '';
+  const bFirstDueDate = b.charges[0]?.dueDate ?? '';
+
+  return aFirstDueDate.localeCompare(bFirstDueDate) ||
+    a.tenantLabel.localeCompare(b.tenantLabel) ||
+    a.tenancyId.localeCompare(b.tenancyId);
 }
 
 function sumBalances(charges: ReminderCharge[]): number {

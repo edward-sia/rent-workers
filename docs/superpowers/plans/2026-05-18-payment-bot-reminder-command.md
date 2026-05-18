@@ -2,7 +2,7 @@
 
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
-**Goal:** Add a read-only `/reminder` Telegram command that lists overdue rent charges plus charges due in the next 14 days, grouped by tenant without collapsing multiple months of debt.
+**Goal:** Add a read-only `/reminder` Telegram command that lists overdue rent charges plus charges due in the next 14 days, grouped by tenant without collapsing multiple months of debt, and presented in due-date order.
 
 **Architecture:** Extract outstanding-charge query and grouping logic from `payment-worker/src/bot.ts` into focused payment-worker modules. `/pay` and `/reminder` share the outstanding-charge filter rules, while `reminder.ts` owns concise Telegram Markdown formatting and message splitting. All Airtable I/O continues through `@rent/airtable-client`.
 
@@ -1090,6 +1090,7 @@ Expected: diff only contains reminder-command implementation, shared outstanding
 - `/reminder` shows overdue charges plus charges due in the next 14 days.
 - A tenant can appear in both sections.
 - A tenant owing multiple months shows every outstanding charge row.
+- Reminder tenant groups and rows are sorted by due date.
 - `Balance` drives inclusion and totals.
 - `/reminder` does not mutate KV session state.
 - Existing `/pay` flow still works.

@@ -34,7 +34,7 @@ flowchart TD
 
 The bot guides the authorized user through a 6-step wizard to log a payment against an outstanding charge. Session state persists in Cloudflare KV with a 1-hour TTL. The final Payment record is created in Airtable and the bot replies with a direct Airtable link.
 
-The bot also supports a read-only `/reminder` command that lists overdue charges under "Pay now" and charges due from today through the next 14 days under "Due in next 14 days". A tenant can appear in both sections, and every outstanding charge is listed separately so multi-month debt is visible.
+The bot also supports a read-only `/reminder` command that lists overdue charges under "Pay now" and charges due from today through the next 14 days under "Due in next 14 days". A tenant can appear in both sections, and every outstanding charge is listed separately so multi-month debt is visible. Reminder tenant groups are shown by earliest due date, with each tenant's charge rows also sorted by due date.
 
 ### Wizard Flow
 
@@ -275,4 +275,5 @@ tsconfig.json
 - Client-side charge filtering by tenancy ID remains intentional because Airtable formula filters on linked-record display values are fragile.
 - `/reminder` is read-only: it does not create Payment records and does not mutate the wizard session.
 - `/reminder` lists every outstanding charge, not one row per tenant, so tenants more than one month behind show every unpaid month.
+- `/reminder` sorts tenant groups by the earliest due date in the group, then sorts that tenant's rows by due date.
 - Reminder output has two buckets: overdue charges under "Pay now" and charges due from today through the next 14 days under "Due in next 14 days".
