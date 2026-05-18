@@ -34,6 +34,8 @@ flowchart TD
 
 The bot guides the authorized user through a 6-step wizard to log a payment against an outstanding charge. Session state persists in Cloudflare KV with a 1-hour TTL. The final Payment record is created in Airtable and the bot replies with a direct Airtable link.
 
+The bot also supports a read-only `/reminder` command that lists overdue charges under "Pay now" and charges due from today through the next 14 days under "Due in next 14 days". A tenant can appear in both sections, and every outstanding charge is listed separately so multi-month debt is visible.
+
 ### Wizard Flow
 
 ```text
@@ -60,7 +62,7 @@ The Worker uses `@rent/airtable-client` schemas:
 | Schema | Used for |
 |---|---|
 | `TenancySchema` | Reading `Label`, `Balance`, `End Date` |
-| `ChargeSchema` | Reading `Label`, `Balance`, `Status`, `Due Date`, `Tenancy` |
+| `ChargeSchema` | Reading `Label`, `Balance`, `Status`, `Due Date`, `Tenancy`, `Type` |
 | `PaymentSchema` | Validating Payment create responses |
 
 Outstanding charges may have Airtable `Status` values `Due`, `Unpaid`, `Partial`, or `Overdue`; `Paid` charges are filtered out before the wizard shows charge choices.
@@ -162,6 +164,7 @@ Open Telegram, find the bot, and send `/help`.
 | Bot command | Action |
 |---|---|
 | `/pay` | Start payment wizard |
+| `/reminder` | Show overdue payments and payments due in the next 14 days |
 | `/cancel` | Cancel wizard from any step |
 | `/help` or `/start` | Show command list |
 
@@ -194,8 +197,11 @@ Test coverage includes:
 | Layer | Files | Coverage |
 |---|---|---|
 | Unit | `test/format.test.ts` | amount/date parsing and AUD formatting |
+| Unit | `test/outstanding.test.ts` | charge-level reminder filtering, bucket totals, tenant grouping, and `/pay` charge selection |
+| Unit | `test/reminder.test.ts` | concise Telegram reminder formatting, Markdown escaping, and message splitting |
 | Unit | `test/session.test.ts` | KV session get/set/clear and TTL |
 | Unit | `test/auth.test.ts` | webhook secret fail-closed behavior |
+| Integration | `test/integration/reminder.test.ts` | `/reminder` output, authorization, and session non-mutation |
 | Integration | `test/integration/webhook.test.ts` | GET banner and webhook secret rejection |
 | Integration | `test/integration/wizard.test.ts` | full wizard path, invalid amount, cancel, and Payment payload |
 
@@ -231,12 +237,14 @@ npx wrangler secret put AUTHORIZED_USER_ID --env staging
 
 The staging deploy workflow registers the Telegram webhook automatically after deployment.
 
-## Expected Phase 4 File Layout
+## File Layout
 
 ```text
 src/
   index.ts      -- Worker entrypoint, GET banner, Telegram secret guard, webhook handler
   bot.ts        -- grammy bot commands, callbacks, and wizard steps
+  outstanding.ts -- outstanding charge filtering, grouping, and reminder bucket rules
+  reminder.ts    -- Telegram Markdown reminder formatting and message splitting
   format.ts     -- amount/date parsing and display formatting
   session.ts    -- KV session helpers
   auth.ts       -- Telegram webhook secret guard
@@ -247,6 +255,7 @@ test/
   session.test.ts
   integration/
     webhook.test.ts
+    reminder.test.ts
     wizard.test.ts
 vitest.config.ts
 vitest.integration.config.ts
@@ -264,3 +273,6 @@ tsconfig.json
 - grammy user authorization still happens inside the bot and rejects Telegram users whose ID does not match `AUTHORIZED_USER_ID`.
 - Sessions use the `session:{userId}` KV key and a 3600 second TTL.
 - Client-side charge filtering by tenancy ID remains intentional because Airtable formula filters on linked-record display values are fragile.
+- `/reminder` is read-only: it does not create Payment records and does not mutate the wizard session.
+- `/reminder` lists every outstanding charge, not one row per tenant, so tenants more than one month behind show every unpaid month.
+- Reminder output has two buckets: overdue charges under "Pay now" and charges due from today through the next 14 days under "Due in next 14 days".
