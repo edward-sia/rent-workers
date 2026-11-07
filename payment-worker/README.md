@@ -1,6 +1,6 @@
 # payment-bot
 
-Cloudflare Worker running a single-operator Telegram bot for recording tenant rent payments into Airtable.
+Cloudflare Worker running a single-operator Telegram bot for recording tenant rent payments, moving tenants in, and moving tenants out in Airtable.
 
 ## Architecture
 
@@ -17,6 +17,8 @@ flowchart TD
     CLIENT --> TEN["Airtable Tenancies"]
     CLIENT --> CHG["Airtable Charges"]
     CLIENT --> PAY["Airtable Payments"]
+    CLIENT --> ROOM["Airtable Rooms"]
+    CLIENT --> TNT["Airtable Tenants"]
     BOT --> TGAPI
 ```
 
@@ -27,6 +29,7 @@ flowchart TD
 | Runtime | Cloudflare Workers | Stateless HTTPS endpoint for Telegram webhooks |
 | Bot framework | grammy | First-class Cloudflare Workers webhook support |
 | Session storage | Cloudflare KV | Wizard state survives between webhook requests and expires automatically |
+| Tenancy rules | `@rent/tenancy` | Pure due-date, charge, start-date and end-date rules shared with `charge-generator` |
 | Airtable I/O | `@rent/airtable-client` | Shared table IDs, Zod schemas, pagination, retries, and timeouts |
 | Auth | `AUTHORIZED_USER_ID` plus `TELEGRAM_WEBHOOK_SECRET` | The bot is single-operator, and Telegram webhook POSTs must carry the configured secret token |
 
@@ -35,6 +38,8 @@ flowchart TD
 The bot guides the authorized user through a 6-step wizard to log a payment against an outstanding charge. Session state persists in Cloudflare KV with a 1-hour TTL. The final Payment record is created in Airtable and the bot replies with a direct Airtable link.
 
 The bot also supports a read-only `/reminder` command that lists overdue charges under "Pay now" and charges due from today through the next 14 days under "Due in next 14 days". A tenant can appear in both sections, and every outstanding charge is listed separately so multi-month debt is visible. Reminder tenant groups are shown by earliest due date, with each tenant's charge rows also sorted by due date.
+
+The bot also has two flows for tenant changes. `/movein` creates a tenancy and `/moveout` ends one. Both are described below.
 
 ### Wizard Flow
 
@@ -49,6 +54,56 @@ The bot also supports a read-only `/reminder` command that lists overdue charges
   -> Payment record created in Airtable
 ```
 
+### Move-Out Flow
+
+```text
+/moveout
+  -> Select tenancy   inline keyboard; lists tenancies with no End Date or an End Date after today (Melbourne), with balance
+  -> Select end date  Today | End of this month | manual date (YYYY-MM-DD or DD/MM/YYYY); not before the Start Date
+  -> Confirm          shows owed-through-end-date, the room change, and charges due after the end date
+  -> Tenancy End Date is set; the room is set to Vacant when the end date is today or earlier
+```
+
+The confirm screen reads that tenancy's charges once. It warns about every charge due after the end date, with its status and a link, because the tenancy no longer owes them. The bot does not change those charges. Fix them by hand in Airtable.
+
+The room is set to `Vacant` only when the end date is today (Melbourne) or earlier. For a later end date the room stays `Occupied`, and the reply says to set it to Vacant in Airtable after the tenant leaves.
+
+After a successful move-out the reply offers a "Start new tenant in {room}" button that starts `/movein` with that room already chosen.
+
+If the tenancy update fails with a 4xx, nothing changed. If it fails with a 5xx or a timeout, it may have saved, and the reply links to the tenancy to check. If only the room update fails, the reply says the end date saved and asks you to set the room to Vacant.
+
+### Move-In Flow
+
+```text
+/movein
+  -> Select room       inline keyboard; vacant rooms first, each showing its Status (the handover button from /moveout skips this)
+  -> Tenant name       text reply; an existing tenant with the same Name can be reused
+  -> Notes             new tenants only; text reply or Skip
+  -> Monthly rent      Rooms "Default Rent" button, or a typed amount
+  -> Start date        Today | 1st of next month | manual date; not more than 60 days in the past
+  -> First payment     Regular monthly from start date | Part month, then monthly on the 1st
+  -> (part month only) amount: suggested rent x 12 / 365 per day, or typed
+  -> Confirm           shows the tenancy, due day, and every charge to create
+  -> Tenant, Tenancy, Charges, then Room are written
+```
+
+First-payment options:
+
+| Option | First charge | Due day |
+|---|---|---|
+| Regular monthly from start date | Full monthly rent, due on the start date | The start day, capped at 28 |
+| Part month, then monthly on the 1st | A prorated amount for the rest of the start month, due on the start date | 1 |
+
+The part-month option is not offered when the start date is already the 1st.
+
+Charges created: the first charge for the start month, plus one regular charge for each later month the charge generator has already covered. The generator runs on the 15th (UTC), so if the bot runs on or after the 15th (UTC) it also creates next month's charge. Otherwise the generator creates it later.
+
+The confirm screen warns when the room is currently `Occupied`. The tenancy label is `{Room code} {Tenant name}`.
+
+Writes happen in this order, with no rollback: Tenants (when new), Tenancies, Charges (one per charge), Rooms `Status` set to `Occupied`. If a step fails, the reply lists the finished steps with links and the steps still to do. A 4xx means that step did not save. A 5xx, timeout or unreadable response means it may have saved, and the reply says to check that table before redoing it.
+
+Confirm for both flows sets the KV session step to `saving` before writing. A second tap on Confirm finds `saving` and writes nothing.
+
 ## Airtable Schema
 
 | Table | ID |
@@ -56,14 +111,18 @@ The bot also supports a read-only `/reminder` command that lists overdue charges
 | Tenancies | `tblvVmo12VikITRH6` |
 | Charges | `tblNCw6ZxspNxiKCu` |
 | Payments | `tbl8Zl9C9fzBDPllu` |
+| Tenants | `tblsesIqj1VuokNcP` |
+| Rooms | `tblBrzawaTuwahBQg` |
 
 The Worker uses `@rent/airtable-client` schemas:
 
 | Schema | Used for |
 |---|---|
-| `TenancySchema` | Reading `Label`, `Balance`, `End Date` |
+| `TenancySchema` | Reading `Label`, `Balance`, `Start Date`, `End Date`, `Room`; creating tenancies; updating `End Date` |
 | `ChargeSchema` | Reading `Label`, `Balance`, `Status`, `Due Date`, `Tenancy`, `Type` |
 | `PaymentSchema` | Validating Payment create responses |
+| `TenantSchema` | Looking up a tenant by `Name`; creating tenants with `Name` and `Notes` |
+| `RoomSchema` | Reading `Code`, `Default Rent`, `Status`; updating `Status` |
 
 Outstanding charges may have Airtable `Status` values `Due`, `Unpaid`, `Partial`, or `Overdue`; `Paid` charges are filtered out before the wizard shows charge choices.
 
@@ -77,6 +136,18 @@ Payment fields written:
 | `Paid Date` | selected date |
 | `Method` | `Cash` or `Bank Transfer` |
 | `Notes` | `Recorded via payment-bot on {datetime}` |
+
+Fields written by `/movein` and `/moveout`:
+
+| Table | Fields |
+|---|---|
+| Tenants | `Name`, `Notes` (only for a new tenant) |
+| Tenancies (create) | `Label`, `Room`, `Tenant`, `Start Date`, `Due Day`, `Monthly Rent`, `Frequency` = `Monthly` |
+| Tenancies (move-out) | `End Date` |
+| Charges | Built by `buildRentCharge` in `@rent/tenancy`: `Label`, `Tenancy`, `Type` = `Rent`, `Period`, `Due Date`, `Amount` |
+| Rooms | `Status` = `Occupied` (move-in) or `Vacant` (move-out) |
+
+Free Airtable plans allow a limited number of API calls per month. A move-in costs about 5 to 7 calls and a move-out about 4.
 
 ## Environment
 
@@ -165,7 +236,9 @@ Open Telegram, find the bot, and send `/help`.
 |---|---|
 | `/pay` | Start payment wizard |
 | `/reminder` | Show overdue payments and payments due in the next 14 days |
-| `/cancel` | Cancel wizard from any step |
+| `/movein` | Move a tenant into a room: creates the Tenant, Tenancy and first Charges, and sets the room to Occupied |
+| `/moveout` | End a tenancy: sets the tenancy End Date, and sets the room to Vacant when the end date is today or earlier |
+| `/cancel` | Cancel any flow from any step |
 | `/help` or `/start` | Show command list |
 
 ## Development Commands
@@ -196,7 +269,7 @@ Test coverage includes:
 
 | Layer | Files | Coverage |
 |---|---|---|
-| Unit | `test/format.test.ts` | amount/date parsing and AUD formatting |
+| Unit | `test/format.test.ts` | amount/date parsing, Melbourne dates, HTTP status extraction, and AUD formatting |
 | Unit | `test/outstanding.test.ts` | charge-level reminder filtering, bucket totals, tenant grouping, and `/pay` charge selection |
 | Unit | `test/reminder.test.ts` | concise Telegram reminder formatting, Markdown escaping, and message splitting |
 | Unit | `test/session.test.ts` | KV session get/set/clear and TTL |
@@ -204,6 +277,9 @@ Test coverage includes:
 | Integration | `test/integration/reminder.test.ts` | `/reminder` output, authorization, and session non-mutation |
 | Integration | `test/integration/webhook.test.ts` | GET banner and webhook secret rejection |
 | Integration | `test/integration/wizard.test.ts` | full wizard path, invalid amount, cancel, and Payment payload |
+| Integration | `test/integration/moveout.test.ts` | `/moveout` end dates, charges-after-end-date warning, room Vacant rule, stale and double confirm, and partial-failure replies |
+| Integration | `test/integration/movein.test.ts` | `/movein` new and existing tenants, first-payment options, written payloads, occupied-room warning, handover from `/moveout`, and partial-failure replies |
+| Helper | `test/integration/helpers.ts` | shared Telegram update builders, Airtable and Telegram mocks, and table IDs for the integration tests |
 
 Run from the repo root:
 
@@ -242,13 +318,16 @@ The staging deploy workflow registers the Telegram webhook automatically after d
 ```text
 src/
   index.ts      -- Worker entrypoint, GET banner, Telegram secret guard, webhook handler
-  bot.ts        -- grammy bot commands, callbacks, and wizard steps
+  bot.ts        -- grammy bot commands, callbacks, and /pay wizard steps
+  movein.ts     -- /movein flow: room, tenant, rent, start date, confirm, and the ordered writes
+  movein-view.ts -- /movein prompts, confirm text, and partial-failure reply text
+  moveout.ts    -- /moveout flow: tenancy, end date, confirm, and the tenancy and room updates
   outstanding.ts -- outstanding charge filtering, grouping, and reminder bucket rules
   reminder.ts    -- Telegram Markdown reminder formatting and message splitting
-  format.ts     -- amount/date parsing and display formatting
+  format.ts     -- amount/date parsing, Melbourne dates, HTTP status extraction, and display formatting
   session.ts    -- KV session helpers
   auth.ts       -- Telegram webhook secret guard
-  types.ts      -- Env and WizardSession types
+  types.ts      -- Env, WizardSession and flow step types
 test/
   auth.test.ts
   format.test.ts
@@ -257,6 +336,9 @@ test/
     webhook.test.ts
     reminder.test.ts
     wizard.test.ts
+    moveout.test.ts
+    movein.test.ts
+    helpers.ts
 vitest.config.ts
 vitest.integration.config.ts
 wrangler.toml
@@ -273,6 +355,9 @@ tsconfig.json
 - grammy user authorization still happens inside the bot and rejects Telegram users whose ID does not match `AUTHORIZED_USER_ID`.
 - Sessions use the `session:{userId}` KV key and a 3600 second TTL.
 - Client-side charge filtering by tenancy ID remains intentional because Airtable formula filters on linked-record display values are fragile.
+- `/movein` and `/moveout` write to Airtable only after Confirm. Error replies show the HTTP status and never include Airtable response bodies.
+- `/pay` lists active tenancies plus ended tenancies that still have a positive `Balance`.
+- Wizard dates (`Today`, `Yesterday`, end-date buttons) use Melbourne time. The move-in rule for next month's charge uses the UTC date, to match the charge generator's cron.
 - `/reminder` is read-only: it does not create Payment records and does not mutate the wizard session.
 - `/reminder` lists every outstanding charge, not one row per tenant, so tenants more than one month behind show every unpaid month.
 - `/reminder` sorts tenant groups by the earliest due date in the group, then sorts that tenant's rows by due date.

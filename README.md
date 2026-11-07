@@ -7,8 +7,9 @@ npm-workspaces monorepo for Cloudflare Workers that automate rent management for
 | Path | What it is | Status |
 |---|---|---|
 | [`packages/airtable-client/`](./packages/airtable-client/) | Shared Airtable REST client with Zod validation, pagination, retries, and timeouts | Used by both workers |
+| [`packages/tenancy/`](./packages/tenancy/) | Pure due-date, charge and tenancy-date rules, with no I/O | Used by both workers |
 | [`charge-generator/`](./charge-generator/) | Monthly cron Worker that creates rent charges and posts a Discord summary | Productionized |
-| [`payment-worker/`](./payment-worker/) | Telegram webhook Worker for recording tenant payments and due-date-sorted overdue/upcoming outstanding payment reminders | Productionized |
+| [`payment-worker/`](./payment-worker/) | Telegram webhook Worker for recording tenant payments, due-date-sorted overdue/upcoming payment reminders, and tenant move-in and move-out | Productionized |
 | [`scripts/check-airtable-schema.ts`](./scripts/check-airtable-schema.ts) | Airtable schema-drift check used locally and by CI | Added in Phase 5 |
 | [`docs/superpowers/`](./docs/superpowers/) | Approved productionization spec and implementation plan | Source of truth for remaining phases |
 
@@ -17,10 +18,26 @@ npm-workspaces monorepo for Cloudflare Workers that automate rent management for
 Both workers operate on `app6He8xRaUzNBTDl`:
 
 ```
-Tenancies ---- read by charge-generator and payment-worker
+Tenancies ---- read by charge-generator; read, created and updated (End Date) by payment-worker
 Charges   ---- written by charge-generator; read/written by payment-worker
 Payments  ---- written by payment-worker
+Tenants   ---- read and created by payment-worker (/movein)
+Rooms     ---- read by payment-worker; Status updated by /movein and /moveout
 ```
+
+## Telegram Commands
+
+`payment-worker` answers these commands from the single authorized operator:
+
+| Command | What it does |
+|---|---|
+| `/pay` | Record a payment against an outstanding charge |
+| `/reminder` | Show overdue charges and charges due in the next 14 days |
+| `/movein` | Pick a room, name a tenant, choose the rent and start date, then create the Tenant, Tenancy, first Charges and set the room to Occupied |
+| `/moveout` | Pick a tenancy and an end date, then set the tenancy `End Date` and, when the end date is today or earlier, set the room to Vacant |
+| `/cancel` | Cancel the current flow |
+
+See [`payment-worker/README.md`](./payment-worker/README.md) for the flows and [`docs/runbook.md`](./docs/runbook.md) for fixing a half-finished move-in.
 
 ## Development
 
