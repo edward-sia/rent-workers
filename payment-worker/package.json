@@ -11,6 +11,7 @@
   },
   "dependencies": {
     "@rent/airtable-client": "*",
+    "@rent/tenancy": "*",
     "grammy": "^1.31.0",
     "zod": "^3.23.8"
   },

@@ -40,11 +40,11 @@ The bot also supports a read-only `/reminder` command that lists overdue charges
 
 ```text
 /pay
-  -> Step 1: Select tenant        inline keyboard, shows balance per tenancy
+  -> Step 1: Select tenant        inline keyboard, shows balance per tenancy; lists active tenancies plus ended ones that still owe
   -> Step 2: Select charge        inline keyboard, shows outstanding amount/status
   -> Step 3: Enter amount         text reply, accepts 1650, $1,650, 1650.00
   -> Step 4: Select method        Cash | Bank Transfer
-  -> Step 5: Select date          Today | Yesterday | manual date
+  -> Step 5: Select date          Today | Yesterday (Melbourne dates) | manual date
   -> Step 6: Confirm              summary with Confirm / Cancel buttons
   -> Payment record created in Airtable
 ```

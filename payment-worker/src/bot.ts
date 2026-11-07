@@ -6,8 +6,8 @@ import {
   formatAUD,
   parseAmount,
   parseDate,
-  todayISO,
-  yesterdayISO,
+  melbourneDateISO,
+  melbourneYesterdayISO,
 } from './format';
 import { fetchReminderBuckets, listOutstandingChargesForTenancy } from './outstanding';
 import { formatReminderMessages } from './reminder';
@@ -16,6 +16,13 @@ import type { Env, WizardSession } from './types';
 
 const METHOD_CASH = 'Cash';
 const METHOD_BANK_TRANSFER = 'Bank Transfer';
+const HELP_TEXT =
+  `🏠 *Newhaven Rent Bot*\n\n` +
+  `/pay — Record a tenant payment\n` +
+  `/reminder — Show overdue and next-14-day outstanding payments\n` +
+  `/movein — Move a tenant into a room\n` +
+  `/moveout — Record a tenant moving out\n` +
+  `/cancel — Cancel current operation`;
 const BOT_INFO = {
   id: 1,
   is_bot: true,
@@ -60,18 +67,12 @@ export function createBot(env: Env): Bot {
   });
 
   bot.command(['start', 'help'], async (ctx) => {
-    await ctx.reply(
-      `🏠 *Newhaven Rent Bot*\n\n` +
-      `/pay — Record a tenant payment\n` +
-      `/reminder — Show overdue and next-14-day outstanding payments\n` +
-      `/cancel — Cancel current operation`,
-      { parse_mode: 'Markdown' },
-    );
+    await ctx.reply(HELP_TEXT, { parse_mode: 'Markdown' });
   });
 
   bot.command('cancel', async (ctx) => {
     await clearSession(ctx.from!.id, env.SESSION_KV);
-    await ctx.reply('❌ Cancelled. Use /pay to start again.');
+    await ctx.reply(`❌ Cancelled.\n\n${HELP_TEXT}`, { parse_mode: 'Markdown' });
   });
 
   bot.command('reminder', async (ctx) => {
@@ -94,7 +95,7 @@ export function createBot(env: Env): Bot {
       TenancySchema,
       {
         fields: ['Label', 'Balance'],
-        filterByFormula: 'OR({End Date} = BLANK(), IS_AFTER({End Date}, TODAY()))',
+        filterByFormula: 'OR({End Date} = BLANK(), IS_AFTER({End Date}, TODAY()), {Balance} > 0)',
       },
     );
 
@@ -162,6 +163,7 @@ export function createBot(env: Env): Bot {
     keyboard.text('↩ Back', 'back:pay').row();
 
     await setSession(ctx.from!.id, {
+      flow: 'pay',
       step: 'select_charge',
       tenancyId,
       tenancyLabel,
@@ -198,6 +200,7 @@ export function createBot(env: Env): Bot {
 
     await setSession(ctx.from!.id, {
       ...session,
+      flow: 'pay',
       step: 'enter_amount',
       chargeId,
       chargeLabel,
@@ -218,10 +221,10 @@ export function createBot(env: Env): Bot {
     await ctx.answerCallbackQuery();
 
     const session = await getSession(ctx.from!.id, env.SESSION_KV);
-    await setSession(ctx.from!.id, { ...session, step: 'select_date', method }, env.SESSION_KV);
+    await setSession(ctx.from!.id, { ...session, flow: 'pay', step: 'select_date', method }, env.SESSION_KV);
 
-    const today = todayISO();
-    const yesterday = yesterdayISO();
+    const today = melbourneDateISO();
+    const yesterday = melbourneYesterdayISO();
     const keyboard = new InlineKeyboard()
       .text(`Today (${today})`, `date:${today}`).row()
       .text(`Yesterday (${yesterday})`, `date:${yesterday}`).row()
@@ -240,7 +243,7 @@ export function createBot(env: Env): Bot {
 
     const session = await getSession(ctx.from!.id, env.SESSION_KV);
     if (value === 'manual') {
-      await setSession(ctx.from!.id, { ...session, step: 'enter_date' }, env.SESSION_KV);
+      await setSession(ctx.from!.id, { ...session, flow: 'pay', step: 'enter_date' }, env.SESSION_KV);
       await ctx.editMessageText(
         'Enter date in `YYYY-MM-DD` or `DD/MM/YYYY` format:',
         { parse_mode: 'Markdown' },
@@ -248,7 +251,7 @@ export function createBot(env: Env): Bot {
       return;
     }
 
-    const updated = { ...session, step: 'confirm' as const, date: value };
+    const updated = { ...session, flow: 'pay' as const, step: 'confirm' as const, date: value };
     await setSession(ctx.from!.id, updated, env.SESSION_KV);
     await sendConfirmation(ctx, updated);
   });
@@ -329,7 +332,7 @@ export function createBot(env: Env): Bot {
         return;
       }
 
-      await setSession(userId, { ...session, step: 'select_method', amount }, env.SESSION_KV);
+      await setSession(userId, { ...session, flow: 'pay', step: 'select_method', amount }, env.SESSION_KV);
       const keyboard = new InlineKeyboard()
         .text('💵 Cash', `method:${METHOD_CASH}`)
         .text('🏦 Bank Transfer', `method:${METHOD_BANK_TRANSFER}`);
@@ -351,13 +354,13 @@ export function createBot(env: Env): Bot {
         return;
       }
 
-      const updated = { ...session, step: 'confirm' as const, date };
+      const updated = { ...session, flow: 'pay' as const, step: 'confirm' as const, date };
       await setSession(userId, updated, env.SESSION_KV);
       await sendConfirmation(ctx, updated);
       return;
     }
 
-    await ctx.reply('Use /pay to record a payment, or /help for commands.');
+    await ctx.reply(HELP_TEXT, { parse_mode: 'Markdown' });
   });
 
   return bot;

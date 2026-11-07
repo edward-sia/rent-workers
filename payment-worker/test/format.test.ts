@@ -1,5 +1,5 @@
 import { afterEach, describe, expect, it, vi } from 'vitest';
-import { escapeTelegramMarkdown, formatAUD, parseAmount, parseDate, todayISO, yesterdayISO } from '../src/format';
+import { escapeTelegramMarkdown, formatAUD, parseAmount, parseDate, melbourneDateISO, melbourneYesterdayISO } from '../src/format';
 
 describe('formatAUD', () => {
   it('formats with $ and 2 dp', () => {
@@ -51,22 +51,15 @@ describe('parseDate', () => {
   });
 });
 
-describe('todayISO / yesterdayISO', () => {
-  afterEach(() => {
-    vi.useRealTimers();
+describe('melbourneDateISO / melbourneYesterdayISO', () => {
+  it('uses the Melbourne calendar day, not the UTC day', () => {
+    const now = new Date('2026-11-07T23:30:00Z');
+
+    expect(melbourneDateISO(now)).toBe('2026-11-08');
+    expect(melbourneYesterdayISO(now)).toBe('2026-11-07');
   });
 
-  it('todayISO matches YYYY-MM-DD shape', () => {
-    expect(todayISO()).toMatch(/^\d{4}-\d{2}-\d{2}$/);
-  });
-
-  it('yesterdayISO is one day before today', () => {
-    vi.useFakeTimers();
-    vi.setSystemTime(new Date('2026-04-26T12:00:00Z'));
-
-    const today = new Date(`${todayISO()}T00:00:00Z`);
-    const yesterday = new Date(`${yesterdayISO()}T00:00:00Z`);
-
-    expect((today.getTime() - yesterday.getTime()) / 86400000).toBe(1);
+  it('defaults to the current time', () => {
+    expect(melbourneDateISO()).toMatch(/^\d{4}-\d{2}-\d{2}$/);
   });
 });

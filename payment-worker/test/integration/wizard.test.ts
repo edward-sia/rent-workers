@@ -224,6 +224,33 @@ describe('payment wizard', () => {
     expect(telegramPayloads.some(payload => String(payload.text).includes('Invalid date'))).toBe(true);
   });
 
+  it('/pay asks Airtable for active tenancies and ended ones that still owe', async () => {
+    stubTelegram(1);
+    let requestPath = '';
+    fetchMock
+      .get(AIRTABLE_ORIGIN)
+      .intercept({ path: new RegExp(`/v0/appTEST/${TENANCIES}\\?.*`) })
+      .reply((opts: { path: string }) => {
+        requestPath = opts.path;
+        return { statusCode: 200, data: { records: [] } };
+      });
+
+    await telegramUpdate(messageUpdate(70, '/pay'));
+
+    const formula = new URL(requestPath, 'https://api.airtable.com').searchParams.get('filterByFormula');
+    expect(formula).toBe('OR({End Date} = BLANK(), IS_AFTER({End Date}, TODAY()), {Balance} > 0)');
+  });
+
+  it('/cancel lists all commands', async () => {
+    const telegramPayloads = stubTelegram(1);
+
+    await telegramUpdate(messageUpdate(71, '/cancel'));
+
+    const text = String(telegramPayloads[0]?.text);
+    expect(text).toContain('/movein');
+    expect(text).toContain('/moveout');
+  });
+
   it('clears the session on /cancel', async () => {
     const telegramPayloads = stubTelegram(1);
     await testEnv.SESSION_KV.put(`session:${USER_ID}`, JSON.stringify({ step: 'confirm' }), {
