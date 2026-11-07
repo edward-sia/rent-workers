@@ -141,8 +141,17 @@ async function saveMoveOut(ctx: Context, env: Env, session: WizardSession): Prom
   } catch (e) {
     logFailure(e);
     await clearSession(userId, env.SESSION_KV);
+    const status = httpStatusOf(e);
+    if (/^HTTP 4\d\d$/.test(status)) {
+      await ctx.editMessageText(`❌ Move-out not saved: ${status}. Nothing was changed. Check Worker logs.`);
+      return;
+    }
+    // A timeout, 5xx or unreadable response can come after Airtable applied the write.
+    const room = session.roomId ? ` and the ${link(env, TABLES.ROOMS, session.roomId, 'room status')}` : '';
     await ctx.editMessageText(
-      `❌ Move-out not saved: ${httpStatusOf(e)}. Nothing was changed. Check Worker logs.`,
+      `⚠️ Move-out may have saved: ${esc(status)}. Check the End Date on the ` +
+      `${link(env, TABLES.TENANCIES, tenancyId, 'tenancy in Airtable')}${room}.`,
+      { parse_mode: 'Markdown' },
     );
     return;
   }

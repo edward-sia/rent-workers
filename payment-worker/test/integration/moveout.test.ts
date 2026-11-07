@@ -56,7 +56,7 @@ function mockGet(table: string, records: object[]): Captured {
   return captured;
 }
 
-function mockPatch(table: string, recordId: string, fields: object, statusCode = 200): Captured {
+function mockPatch(table: string, recordId: string, fields: object, statusCode = 200, times = 1): Captured {
   const captured: Captured = { body: null, path: '', calls: 0 };
   fetchMock
     .get(AIRTABLE_ORIGIN)
@@ -68,7 +68,8 @@ function mockPatch(table: string, recordId: string, fields: object, statusCode =
         ? { id: recordId, fields }
         : { error: { type: 'INVALID_VALUE', message: 'secret-airtable-detail' } };
       return { statusCode, data };
-    });
+    })
+    .times(times);
   return captured;
 }
 
@@ -270,9 +271,43 @@ describe('/moveout', () => {
     await telegramUpdate(callbackUpdate(80, 'mo:confirm'));
 
     const text = String(lastReply(telegram).text);
-    expect(text).toContain('Move-out not saved: HTTP 422');
+    expect(text).toContain('Move-out not saved: HTTP 422. Nothing was changed.');
     expect(text).not.toContain('secret-airtable-detail');
     expect(error).toHaveBeenCalled();
+    expect(await readSession()).toBeNull();
+  });
+
+  it('says the move-out may have saved when the tenancy PATCH gets a 5xx', async () => {
+    vi.spyOn(console, 'error').mockImplementation(() => {});
+    const telegram = stubTelegram(2);
+    await seedSession({ ...CONFIRM_SESSION, endDate: melbourneDateISO() });
+    mockPatch(TENANCIES, 'recT1', {}, 503, 3);
+
+    await telegramUpdate(callbackUpdate(82, 'mo:confirm'));
+
+    const reply = lastReply(telegram);
+    const text = String(reply.text);
+    expect(text).toContain('may have saved: HTTP 503');
+    expect(text).not.toContain('Nothing was changed');
+    expect(text).toContain(`https://airtable.com/appTEST/${TENANCIES}/recT1`);
+    expect(text).toContain(`https://airtable.com/appTEST/${ROOMS}/recR1`);
+    expect(text).not.toContain('secret-airtable-detail');
+    expect(reply.parse_mode).toBe('Markdown');
+    expect(await readSession()).toBeNull();
+  });
+
+  it('says the move-out may have saved when the PATCH response is unreadable', async () => {
+    vi.spyOn(console, 'error').mockImplementation(() => {});
+    const telegram = stubTelegram(2);
+    await seedSession({ ...CONFIRM_SESSION, endDate: melbourneDateISO() });
+    mockPatch(TENANCIES, 'recT1', { 'End Date': melbourneDateISO() });
+
+    await telegramUpdate(callbackUpdate(83, 'mo:confirm'));
+
+    const text = String(lastReply(telegram).text);
+    expect(text).toContain('may have saved: request failed');
+    expect(text).not.toContain('Nothing was changed');
+    expect(text).toContain(`https://airtable.com/appTEST/${TENANCIES}/recT1`);
     expect(await readSession()).toBeNull();
   });
 
