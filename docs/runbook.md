@@ -228,17 +228,17 @@ If Airtable field names or status values changed, update `packages/airtable-clie
 
 ## `/pay` does not list a tenant
 
-`/pay` lists tenancies with no `End Date`, tenancies whose `End Date` is after today, and ended tenancies that still have a positive `Balance`. A tenant who moved out and still owes money stays in the list until the balance is paid. If a tenancy is missing, check its `End Date` and `Balance` in Airtable.
+`/pay` lists tenancies with no `End Date`, tenancies whose `End Date` is after today, and ended tenancies that still have a positive `Balance`. "Today" here is Airtable's `TODAY()` in the filter formula, not the Melbourne date. A tenant who moved out and still owes money stays in the list until the balance is paid. If a tenancy is missing, check its `End Date` and `Balance` in Airtable.
 
 ## `/moveout` and `/movein`: how they work
 
-Both commands only write to Airtable after you tap Confirm. Both use the Melbourne date for "today". Both reply to errors with an HTTP status and a link, never with the Airtable response body. Worker logs name the failed call and give the same status, for example `[payment-bot] movein failed: create Tenancies: HTTP 422`. Logs never include the response body either.
+Both commands only write to Airtable after you tap Confirm. The date buttons, the move-in start-date check and the move-out Vacant decision use the Melbourne date for "today". The `/moveout` tenancy list is different: Airtable filters it with its own `TODAY()`, so near midnight it can be a day off from the Melbourne date. Both reply to errors with an HTTP status and a link, never with the Airtable response body. Worker logs name the failed call and give the same status, for example `[payment-bot] movein failed: create Tenancies: HTTP 422`. Logs never include the response body either.
 
 If tapping Confirm or Cancel replies that the move-out or move-in is "already being saved, or the save has finished", the first Confirm is still running or stopped partway. Wait a minute, then check Airtable for what was written before you start the command again.
 
 ### `/moveout`
 
-1. `/moveout` lists tenancies with no `End Date` or an `End Date` after today.
+1. `/moveout` lists tenancies with no `End Date` or an `End Date` after Airtable's `TODAY()`.
 2. Pick one, then pick the end date: Today, End of this month, or type a date. The end date cannot be before the tenancy `Start Date`.
 3. The confirm screen shows the amount owed through the end date and what will happen to the room.
 4. If any charge is due after the end date, the confirm screen lists it with its status and a link. The bot does not change these charges. See "Fixing charges due after an end date" below.

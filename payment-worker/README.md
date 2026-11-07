@@ -58,7 +58,7 @@ The bot also has two flows for tenant changes. `/movein` creates a tenancy and `
 
 ```text
 /moveout
-  -> Select tenancy   inline keyboard; lists tenancies with no End Date or an End Date after today (Melbourne), with balance
+  -> Select tenancy   inline keyboard; lists tenancies with no End Date or an End Date after Airtable's TODAY(), with balance
   -> Select end date  Today | End of this month | manual date (YYYY-MM-DD or DD/MM/YYYY); not before the Start Date
   -> Confirm          shows owed-through-end-date, the room change, and charges due after the end date
   -> Tenancy End Date is set; the room is set to Vacant when the end date is today or earlier
@@ -363,7 +363,7 @@ tsconfig.json
 - `/movein` and `/moveout` write to Airtable only after Confirm. Error replies show the HTTP status and never include Airtable response bodies.
 - Logs never include Airtable response bodies either. Every bot command logs a failed Airtable call as `[payment-bot] <flow> failed: <action>: <status>`, for example `[payment-bot] pay failed: create Payments: HTTP 422`. The `/pay` "Failed to save payment" reply shows only the status.
 - `/pay` lists active tenancies plus ended tenancies that still have a positive `Balance`.
-- Wizard dates (`Today`, `Yesterday`, end-date buttons) use Melbourne time. The move-in rule for next month's charge uses the UTC date, to match the charge generator's cron.
+- Wizard dates (`Today`, `Yesterday`, end-date buttons), the move-in start-date check and the move-out Vacant decision use Melbourne time. The `/moveout` and `/pay` tenancy lists are filtered by Airtable's `TODAY()` in the filter formula, not by the Melbourne date. The move-in rule for next month's charge uses the UTC date, to match the charge generator's cron.
 - `/reminder` is read-only: it does not create Payment records and does not mutate the wizard session.
 - `/reminder` lists every outstanding charge, not one row per tenant, so tenants more than one month behind show every unpaid month.
 - `/reminder` sorts tenant groups by the earliest due date in the group, then sorts that tenant's rows by due date.

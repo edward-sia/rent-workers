@@ -51,7 +51,6 @@ const REQUIRED_FIELDS = {
     Code: ['singleLineText'],
     'Default Rent': ['currency', 'number'],
     Status: ['singleSelect'],
-    Tenancies: ['multipleRecordLinks'],
   },
   [TABLES.TENANTS]: {
     Name: ['singleLineText'],
