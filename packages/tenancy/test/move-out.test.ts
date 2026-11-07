@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import { chargesAfter, checkEndDate, owedThrough } from '../src/move-out';
+import { checkStartDate } from '../src/move-in';
 
 describe('checkEndDate', () => {
   it('rejects an end date before the start date', () => {
@@ -32,5 +33,15 @@ describe('chargesAfter', () => {
 describe('owedThrough', () => {
   it('sums unpaid balances due on or before the end date', () => {
     expect(owedThrough(charges, '2026-11-20')).toBe(125.5);
+  });
+});
+
+describe('error messages', () => {
+  it('contain no Telegram Markdown characters', () => {
+    const messages = [checkStartDate('2026-01-01', '2026-11-07'), checkEndDate('2026-11-01', '2026-11-05')];
+    for (const message of messages) {
+      expect(message).not.toBeNull();
+      expect(message).not.toMatch(/[_*[\]()`]/);
+    }
   });
 });

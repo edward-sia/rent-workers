@@ -6,7 +6,7 @@ export interface ChargeLike {
 /** An error message for the operator, or null when the end date is fine. */
 export function checkEndDate(endDate: string, startDate: string | undefined): string | null {
   if (startDate && endDate < startDate) {
-    return `End date can't be before the start date (${startDate}).`;
+    return `End date can't be before the start date, ${startDate}.`;
   }
   return null;
 }
