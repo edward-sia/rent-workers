@@ -66,7 +66,8 @@ Tables: `TENANCIES`, `CHARGES`, `PAYMENTS`, `TENANTS`, `ROOMS`.
 - Accepts current Charge status values used by the Workers, including `Due`, `Unpaid`, `Partial`, `Paid`, and `Overdue`.
 - Applies a 10 second request timeout by default.
 - `update` sends a PATCH to one record and parses the returned fields with the schema.
-- Retries network errors and 5xx responses up to two times.
+- Retries GET and PATCH requests up to two times after a network error, a timeout or a 5xx response. GET and PATCH are safe to send again.
+- Sends a POST (`create`) once. A POST that gets a 5xx, a timeout or a network error throws straight away. Airtable may still have created the record, so check before creating it again.
 - Fails fast on 4xx responses.
 
 ## Schema Drift

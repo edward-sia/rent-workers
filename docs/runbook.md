@@ -148,7 +148,7 @@ Common causes:
 | `HTTP 401` | Airtable PAT expired, revoked, or missing scope | Rotate `AIRTABLE_TOKEN` with `wrangler secret put AIRTABLE_TOKEN` |
 | `HTTP 422` | Airtable field/schema mismatch | Compare `packages/airtable-client/src/schemas.ts` with the Airtable base |
 | `Airtable schema mismatch` | Field changed type/name or response shape changed | Update the shared schema and worker code together |
-| Repeated 5xx/network errors | Airtable transient outage or network issue | Retry later; client already retries 5xx/network failures twice |
+| Repeated 5xx/network errors | Airtable transient outage or network issue | Retry later. The client already retries reads (GET) and updates (PATCH) twice. It sends creates (POST) once, so a failed create may still have saved: check for the record before you create it again |
 
 ## Airtable schema-check failed
 
@@ -273,7 +273,7 @@ If a write fails, the bot replies "Move-in not finished". The reply lists the fi
 2. For each step still to do, create the record in Airtable by hand: the Tenancy (with `Room`, `Tenant`, `Start Date`, `Due Day`, `Monthly Rent`, `Frequency` = `Monthly`), then the Charges (`Tenancy`, `Type` = `Rent`, `Period`, `Due Date`, `Amount`, label `{tenancy label} {YYYY-MM} Rent`), then the room `Status`.
 3. Do not create a charge that already exists. The charge generator skips a period that already has a charge for the tenancy.
 
-A failure with HTTP 4xx means that step did not save. A reply that says "This step may have saved" (a 5xx, a timeout, or an unreadable response) means Airtable may have applied the write anyway. Open that table first and look for the record before you redo the step. The Airtable client retries POSTs on 5xx and timeouts, so a duplicate record is possible. Delete any duplicate by hand.
+A failure with HTTP 4xx means that step did not save. A reply that says "This step may have saved" (a 5xx, a timeout, or an unreadable response) means Airtable may have applied the write anyway. Open that table first and look for the record before you redo the step. The Airtable client sends each create (POST) once and does not retry it. The record may still exist from that one attempt. Create it by hand only if it is not there. If you do find a duplicate, delete it by hand.
 
 If the reply says "Move-in not saved ... Nothing was changed", the very first write failed with a 4xx. Check Worker logs for the cause, then run `/movein` again.
 

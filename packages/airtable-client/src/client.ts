@@ -16,7 +16,7 @@ export type QueryParams = Record<string, string | string[]>;
 export interface AirtableClientOptions {
   /** Per-request timeout in ms. Default 10_000. */
   timeoutMs?: number;
-  /** Max retries on 5xx / network error. Default 2. */
+  /** Max retries on 5xx / network error / timeout, for GET and PATCH only. Default 2. */
   retries?: number;
 }
 
@@ -134,13 +134,19 @@ export class AirtableClient {
     };
   }
 
+  /**
+   * Send one request, retrying a 5xx, network error or timeout for GET and PATCH.
+   * POST is sent once: a POST that failed this way may still have created the record,
+   * so sending it again could create a duplicate.
+   */
   private async request(url: string, init: RequestInit = {}): Promise<Response> {
     const baseInit: RequestInit = {
       ...init,
       headers: { ...this.headers(), ...(init.headers as Record<string, string> | undefined) },
     };
+    const retries = (init.method ?? 'GET') === 'POST' ? 0 : this.retries;
     let lastErr: unknown;
-    for (let attempt = 0; attempt <= this.retries; attempt++) {
+    for (let attempt = 0; attempt <= retries; attempt++) {
       try {
         const res = await fetch(url, {
           ...baseInit,
@@ -149,14 +155,14 @@ export class AirtableClient {
         if (res.ok) return res;
         if (res.status >= 500) {
           lastErr = new Error(`HTTP ${res.status}: ${await res.text()}`);
-          if (attempt < this.retries) { await this.sleep(this.backoffMs(attempt)); continue; }
+          if (attempt < retries) { await this.sleep(this.backoffMs(attempt)); continue; }
           throw lastErr;
         }
         throw new Error(`HTTP ${res.status}: ${await res.text()}`);
       } catch (e) {
         if (e instanceof TypeError || (e instanceof DOMException && e.name === 'AbortError')) {
           lastErr = e;
-          if (attempt < this.retries) { await this.sleep(this.backoffMs(attempt)); continue; }
+          if (attempt < retries) { await this.sleep(this.backoffMs(attempt)); continue; }
           throw e;
         }
         throw e;
