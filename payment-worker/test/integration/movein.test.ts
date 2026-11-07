@@ -11,6 +11,7 @@ import {
   USER_ID,
   buttonData,
   callbackUpdate,
+  loggedText,
   messageUpdate,
   parseBody,
   stubTelegram,
@@ -450,12 +451,13 @@ describe('/movein', () => {
     expect(text).toContain('Still to do in Airtable');
     expect(text).toContain('rent charge');
     expect(text).toContain('Occupied');
-    expect(error).toHaveBeenCalledWith(expect.stringContaining('[payment-bot] movein failed:'));
+    expect(error).toHaveBeenCalledWith('[payment-bot] movein failed: create Tenancies: HTTP 429');
+    expect(loggedText(error)).not.toContain('secret-airtable-detail');
     expect(await readSession()).toBeNull();
   });
 
   it('says a step may have saved when the room PATCH gets a 5xx', async () => {
-    vi.spyOn(console, 'error').mockImplementation(() => {});
+    const error = vi.spyOn(console, 'error').mockImplementation(() => {});
     const telegram = stubTelegram(2);
     await seedSession(confirmSession(futureFirst()));
     mockWrite('POST', TENANTS, 'recN1', { Name: 'Sun Peng' });
@@ -472,6 +474,8 @@ describe('/movein', () => {
     expect(text).toContain(`https://airtable.com/appTEST/${CHARGES}/recC1`);
     expect(text).toContain(`https://airtable.com/appTEST/${ROOMS}/recR1`);
     expect(text).not.toContain('secret-airtable-detail');
+    expect(error).toHaveBeenCalledWith('[payment-bot] movein failed: update Rooms: HTTP 503');
+    expect(loggedText(error)).not.toContain('secret-airtable-detail');
     expect(await readSession()).toBeNull();
   });
 
@@ -584,11 +588,12 @@ describe('/movein', () => {
     const text = String(lastReply(telegram).text);
     expect(text).toContain('Failed to load rooms');
     expect(text).not.toContain('secret-airtable-detail');
-    expect(error).toHaveBeenCalledWith(expect.stringContaining('[payment-bot] movein failed:'));
+    expect(error).toHaveBeenCalledWith('[payment-bot] movein failed: read Rooms: HTTP 403');
+    expect(loggedText(error)).not.toContain('secret-airtable-detail');
   });
 
   it('reports a name lookup failure and ends the flow', async () => {
-    vi.spyOn(console, 'error').mockImplementation(() => {});
+    const error = vi.spyOn(console, 'error').mockImplementation(() => {});
     const telegram = stubTelegram(1);
     await seedSession({ ...BASE_SESSION, step: 'mi_enter_name' });
     fetchMock
@@ -601,6 +606,8 @@ describe('/movein', () => {
     const text = String(lastReply(telegram).text);
     expect(text).toContain('Failed to look up tenants');
     expect(text).not.toContain('secret-airtable-detail');
+    expect(error).toHaveBeenCalledWith('[payment-bot] movein failed: read Tenants: HTTP 403');
+    expect(loggedText(error)).not.toContain('secret-airtable-detail');
     expect(await readSession()).toBeNull();
   });
 });

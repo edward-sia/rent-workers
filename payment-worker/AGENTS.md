@@ -8,7 +8,7 @@ This Worker owns the Telegram payment bot.
 - Callback data prefixes: `mi:` for move-in, `mo:` for move-out. `/pay` keeps its own unprefixed callbacks.
 - Confirm buttons set the KV session step to `saving` before any Airtable write. A second tap finds `saving`, writes nothing, and says to check Airtable before trying again. Keep that guard.
 - Build the Airtable client with `airtableFor(env)` (`src/airtable.ts`, 5 s per request). `index.ts` gives grammY a 50 s webhook timeout so a Confirm's writes can all finish. Keep the two in step if you add Airtable calls to a Confirm.
-- Replies must never include raw Airtable response bodies. Show only the HTTP status (`httpStatusOf`) and link to the record. A 5xx, timeout or unreadable response may have saved, so the reply says to check before retrying.
+- Replies and logs must never include raw Airtable response bodies. Replies show only the HTTP status (`httpStatusOf`) and link to the record. Logs go through `logAirtableFailure(flow, action, error)`, which writes the action and the status only. A 5xx, timeout or unreadable response may have saved, so the reply says to check before retrying.
 - Due-date, charge and tenancy rules live in `packages/tenancy`. Do not copy them into this Worker.
 - `/reminder` is read-only and shows overdue plus next-14-day outstanding charges.
 - Keep Airtable access through `@rent/airtable-client`; do not add one-off fetch helpers.

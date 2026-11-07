@@ -361,6 +361,7 @@ tsconfig.json
 - Sessions use the `session:{userId}` KV key and a 3600 second TTL.
 - Client-side charge filtering by tenancy ID remains intentional because Airtable formula filters on linked-record display values are fragile.
 - `/movein` and `/moveout` write to Airtable only after Confirm. Error replies show the HTTP status and never include Airtable response bodies.
+- Logs never include Airtable response bodies either. Every bot command logs a failed Airtable call as `[payment-bot] <flow> failed: <action>: <status>`, for example `[payment-bot] pay failed: create Payments: HTTP 422`. The `/pay` "Failed to save payment" reply shows only the status.
 - `/pay` lists active tenancies plus ended tenancies that still have a positive `Balance`.
 - Wizard dates (`Today`, `Yesterday`, end-date buttons) use Melbourne time. The move-in rule for next month's charge uses the UTC date, to match the charge generator's cron.
 - `/reminder` is read-only: it does not create Payment records and does not mutate the wizard session.

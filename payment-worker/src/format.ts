@@ -58,9 +58,30 @@ export const melbourneYesterdayISO = (now: Date = new Date()): string =>
 
 /**
  * The `HTTP 422`-style status from an Airtable client error, for Telegram replies.
- * The full error message embeds the Airtable response body, so it goes to logs only.
+ * The full error message embeds the Airtable response body, so it is never shown or logged.
  */
 export function httpStatusOf(error: unknown): string {
   const message = error instanceof Error ? error.message : String(error);
   return /\bHTTP\s+\d{3}\b/.exec(message)?.[0] ?? 'request failed';
+}
+
+/**
+ * A short, body-free reason for a failed Airtable call, for logs: the HTTP status,
+ * `schema mismatch`, `timeout`, or `request failed`.
+ */
+export function failureSummary(error: unknown): string {
+  const status = httpStatusOf(error);
+  if (status !== 'request failed') return status;
+  const message = error instanceof Error ? error.message : String(error);
+  if (message.includes('Airtable schema mismatch')) return 'schema mismatch';
+  if (/timeout|aborted/i.test(message)) return 'timeout';
+  return 'request failed';
+}
+
+/**
+ * Log a failed Airtable call as `[payment-bot] <flow> failed: <action>: <reason>`.
+ * The error message embeds the Airtable response body, so it is never logged.
+ */
+export function logAirtableFailure(flow: string, action: string, error: unknown): void {
+  console.error(`[payment-bot] ${flow} failed: ${action}: ${failureSummary(error)}`);
 }

@@ -5,6 +5,8 @@ import {
   escapeTelegramMarkdown,
   escapeTelegramMarkdownUrl,
   formatAUD,
+  httpStatusOf,
+  logAirtableFailure,
   parseAmount,
   parseDate,
   melbourneDateISO,
@@ -85,8 +87,8 @@ export function createBot(env: Env): Bot {
         await ctx.reply(message, { parse_mode: 'Markdown' });
       }
     } catch (e) {
-      console.error(`[payment-bot] reminder failed: ${e instanceof Error ? e.message : String(e)}`);
-      await ctx.reply('Failed to load reminders. Check Worker logs for the Airtable error.');
+      logAirtableFailure('reminder', 'read Tenancies and Charges', e);
+      await ctx.reply('Failed to load reminders. Check Worker logs for the HTTP status.');
     }
   });
 
@@ -308,11 +310,9 @@ export function createBot(env: Env): Bot {
 
       await clearSession(userId, env.SESSION_KV);
     } catch (e) {
-      const msg = (e as Error).message;
-      console.error(`[payment-bot] create failed: ${msg}`);
-      await ctx.editMessageText(`❌ Failed to save payment:\n\`${escapeTelegramMarkdown(msg)}\``, {
-        parse_mode: 'Markdown',
-      });
+      logAirtableFailure('pay', 'create Payments', e);
+      // Plain text: the status is `HTTP 422` or `request failed`, never the Airtable body.
+      await ctx.editMessageText(`❌ Failed to save payment: ${httpStatusOf(e)}. Check Worker logs.`);
       await clearSession(userId, env.SESSION_KV);
     }
   });

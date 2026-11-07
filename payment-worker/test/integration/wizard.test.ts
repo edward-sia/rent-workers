@@ -1,5 +1,5 @@
 import { SELF, env, fetchMock } from 'cloudflare:test';
-import { afterEach, beforeEach, describe, expect, it } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import type { Env } from '../../src/types';
 
 const AIRTABLE_ORIGIN = 'https://api.airtable.com';
@@ -23,6 +23,7 @@ beforeEach(async () => {
 
 afterEach(() => {
   fetchMock.deactivate();
+  vi.restoreAllMocks();
 });
 
 function telegramUpdate(body: object): Promise<Response> {
@@ -261,6 +262,30 @@ describe('payment wizard', () => {
 
     expect(await testEnv.SESSION_KV.get(`session:${USER_ID}`)).toBeNull();
     expect(telegramPayloads.some(payload => String(payload.text).includes('Cancelled'))).toBe(true);
+  });
+
+  it('shows only the HTTP status when saving the payment fails', async () => {
+    const error = vi.spyOn(console, 'error').mockImplementation(() => {});
+    const telegramPayloads = stubTelegram(2);
+    await testEnv.SESSION_KV.put(`session:${USER_ID}`, JSON.stringify({
+      flow: 'pay', step: 'confirm', tenancyId: 'recT1', tenancyLabel: '6B Sun Peng',
+      chargeId: 'recC1', chargeLabel: '6B Sun Peng 2026-05 Rent', chargeBalance: 1650,
+      amount: 1650, method: 'Cash', date: '2026-05-01',
+    }), { expirationTtl: 3600 });
+    fetchMock
+      .get(AIRTABLE_ORIGIN)
+      .intercept({ path: `/v0/appTEST/${PAYMENTS}`, method: 'POST' })
+      .reply(422, { error: { type: 'INVALID_VALUE', message: 'secret-airtable-detail' } });
+
+    await telegramUpdate(callbackUpdate(45, 'confirm:yes'));
+
+    const text = String(telegramPayloads.filter((payload) => payload.text !== undefined).at(-1).text);
+    expect(text).toContain('Failed to save payment');
+    expect(text).toContain('HTTP 422');
+    expect(text).not.toContain('secret-airtable-detail');
+    expect(error).toHaveBeenCalledWith('[payment-bot] pay failed: create Payments: HTTP 422');
+    expect(error.mock.calls.flat().map(String).join('\n')).not.toContain('secret-airtable-detail');
+    expect(await testEnv.SESSION_KV.get(`session:${USER_ID}`)).toBeNull();
   });
 
   it('does not write a payment when confirm runs after the session expires', async () => {

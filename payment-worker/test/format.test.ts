@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import {
   escapeTelegramMarkdown,
+  failureSummary,
   formatAUD,
   httpStatusOf,
   parseAmount,
@@ -80,5 +81,26 @@ describe('httpStatusOf', () => {
 
   it('falls back when the error has no HTTP status', () => {
     expect(httpStatusOf(new Error('network down'))).toBe('request failed');
+  });
+});
+
+describe('failureSummary', () => {
+  it('keeps only the HTTP status', () => {
+    const error = new Error('Airtable create [tblX]: HTTP 422: {"error":{"message":"secret"}}');
+    expect(failureSummary(error)).toBe('HTTP 422');
+  });
+
+  it('names a schema mismatch without the field details', () => {
+    const error = new Error('Airtable schema mismatch on create [tblX/rec1] at Label: Required');
+    expect(failureSummary(error)).toBe('schema mismatch');
+  });
+
+  it('names a timeout', () => {
+    const error = new Error('Airtable create [tblX]: The operation was aborted due to timeout');
+    expect(failureSummary(error)).toBe('timeout');
+  });
+
+  it('falls back for anything else', () => {
+    expect(failureSummary(new Error('network down'))).toBe('request failed');
   });
 });

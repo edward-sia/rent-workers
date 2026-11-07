@@ -10,6 +10,7 @@ import {
   USER_ID,
   buttonData,
   callbackUpdate,
+  loggedText,
   messageUpdate,
   parseBody,
   stubTelegram,
@@ -274,7 +275,8 @@ describe('/moveout', () => {
     const text = String(lastReply(telegram).text);
     expect(text).toContain('Failed to load tenancies');
     expect(text).not.toContain('secret-airtable-detail');
-    expect(error).toHaveBeenCalledWith(expect.stringContaining('[payment-bot] moveout failed:'));
+    expect(error).toHaveBeenCalledWith('[payment-bot] moveout failed: read Tenancies: HTTP 403');
+    expect(loggedText(error)).not.toContain('secret-airtable-detail');
   });
 
   it('shows only the HTTP status when the tenancy PATCH fails', async () => {
@@ -288,7 +290,8 @@ describe('/moveout', () => {
     const text = String(lastReply(telegram).text);
     expect(text).toContain('Move-out not saved: HTTP 422. Nothing was changed.');
     expect(text).not.toContain('secret-airtable-detail');
-    expect(error).toHaveBeenCalled();
+    expect(error).toHaveBeenCalledWith('[payment-bot] moveout failed: update Tenancies: HTTP 422');
+    expect(loggedText(error)).not.toContain('secret-airtable-detail');
     expect(await readSession()).toBeNull();
   });
 
@@ -327,7 +330,7 @@ describe('/moveout', () => {
   });
 
   it('names the room step when only the room PATCH fails', async () => {
-    vi.spyOn(console, 'error').mockImplementation(() => {});
+    const error = vi.spyOn(console, 'error').mockImplementation(() => {});
     const today = melbourneDateISO();
     const telegram = stubTelegram(2);
     await seedSession({ ...CONFIRM_SESSION, endDate: today });
@@ -341,6 +344,8 @@ describe('/moveout', () => {
     expect(text).toContain('HTTP 422');
     expect(text).toContain('Vacant');
     expect(text).not.toContain('secret-airtable-detail');
+    expect(error).toHaveBeenCalledWith('[payment-bot] moveout failed: update Rooms: HTTP 422');
+    expect(loggedText(error)).not.toContain('secret-airtable-detail');
     expect(await readSession()).toBeNull();
   });
 

@@ -98,3 +98,8 @@ export function buttonData(payloads: any[]): string[] {
     return rows.flat().flatMap((button) => (button.callback_data ? [button.callback_data] : []));
   });
 }
+
+/** Everything a `console.error` spy was called with, one call per line. */
+export function loggedText(spy: { mock: { calls: unknown[][] } }): string {
+  return spy.mock.calls.map((call) => call.map(String).join(' ')).join('\n');
+}

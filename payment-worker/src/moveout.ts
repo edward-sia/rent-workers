@@ -14,6 +14,7 @@ import {
   escapeTelegramMarkdownUrl,
   formatAUD,
   httpStatusOf,
+  logAirtableFailure,
   melbourneDateISO,
   parseDate,
 } from './format';
@@ -30,8 +31,9 @@ const EXPIRED = '⚠️ This move-out was already saved or has expired. Use /mov
 const SAVING =
   '⏳ This move-out is already being saved, or the save has finished. Check Airtable before you try again.';
 
-function logFailure(error: unknown): void {
-  console.error(`[payment-bot] moveout failed: ${error instanceof Error ? error.message : String(error)}`);
+/** `action` names the Airtable call, like `update Tenancies`. */
+function logFailure(action: string, error: unknown): void {
+  logAirtableFailure('moveout', action, error);
 }
 
 /** Edit the tapped message for button presses, reply for typed text. */
@@ -117,7 +119,7 @@ async function showConfirm(
     });
     charges = all.filter((charge) => charge.fields.Tenancy?.includes(String(session.tenancyId)));
   } catch (e) {
-    logFailure(e);
+    logFailure('read Charges', e);
     await clearSession(userId, env.SESSION_KV);
     await respond(ctx, 'Failed to load charges. Check Worker logs, then use /moveout to try again.');
     return;
@@ -142,7 +144,7 @@ async function saveMoveOut(ctx: Context, env: Env, session: WizardSession): Prom
   try {
     await airtable.update(TABLES.TENANCIES, TenancySchema, tenancyId, { 'End Date': endDate });
   } catch (e) {
-    logFailure(e);
+    logFailure('update Tenancies', e);
     await clearSession(userId, env.SESSION_KV);
     const status = httpStatusOf(e);
     if (/^HTTP 4\d\d$/.test(status)) {
@@ -165,7 +167,7 @@ async function saveMoveOut(ctx: Context, env: Env, session: WizardSession): Prom
       await airtable.update(TABLES.ROOMS, RoomSchema, session.roomId, { Status: 'Vacant' });
       lines.push(`🚪 Room ${code} marked *Vacant*.`);
     } catch (e) {
-      logFailure(e);
+      logFailure('update Rooms', e);
       lines[0] = `⚠️ *End date saved, but the room was not updated*`;
       lines.push(`🚪 Room status update failed: ${httpStatusOf(e)}. Set ${code} to *Vacant* in Airtable.`);
     }
@@ -197,7 +199,7 @@ export function registerMoveOut(bot: Bot, env: Env): void {
         filterByFormula: 'OR({End Date} = BLANK(), IS_AFTER({End Date}, TODAY()))',
       });
     } catch (e) {
-      logFailure(e);
+      logFailure('read Tenancies', e);
       await ctx.reply('Failed to load tenancies. Check Worker logs.');
       return;
     }

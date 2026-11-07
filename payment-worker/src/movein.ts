@@ -23,6 +23,7 @@ import {
   escapeTelegramMarkdown as esc,
   formatAUD,
   httpStatusOf,
+  logAirtableFailure,
   melbourneDateISO,
   parseAmount,
   parseDate,
@@ -53,8 +54,9 @@ const SAVING =
 const MARKDOWN = { parse_mode: 'Markdown' } as const;
 const ROOM_FIELDS = ['Code', 'Default Rent', 'Status'];
 
-function logFailure(error: unknown): void {
-  console.error(`[payment-bot] movein failed: ${error instanceof Error ? error.message : String(error)}`);
+/** `action` names the Airtable call, like `create Tenancies`. */
+function logFailure(action: string, error: unknown): void {
+  logAirtableFailure('movein', action, error);
 }
 
 /** Save the session, then show the prompt: edit the tapped message for buttons, reply for typed text. */
@@ -143,7 +145,7 @@ async function handleName(ctx: Context, env: Env, session: WizardSession, name: 
       filterByFormula: `{Name} = ${formulaString(name)}`,
     });
   } catch (e) {
-    logFailure(e);
+    logFailure('read Tenants', e);
     await clearSession(ctx.from!.id, env.SESSION_KV);
     await ctx.reply('Failed to look up tenants. Check Worker logs, then use /movein to try again.');
     return;
@@ -172,11 +174,13 @@ async function saveMoveIn(ctx: Context, env: Env, moveIn: MoveIn): Promise<void>
   const done: string[] = [];
   if (tenantId) done.push(`👤 Existing tenant ${name}: ${link(env, TABLES.TENANTS, tenantId, 'Open')}`);
 
-  const steps: { todo: string; check: string; run: () => Promise<string> }[] = [];
+  // `action` is the Airtable call, for the log line.
+  const steps: { todo: string; check: string; action: string; run: () => Promise<string> }[] = [];
   if (!tenantId) {
     steps.push({
       todo: `create the tenant ${name}`,
       check: link(env, TABLES.TENANTS, null, 'Tenants table'),
+      action: 'create Tenants',
       run: async () => {
         const notes = moveIn.tenantNotes ? { Notes: moveIn.tenantNotes } : {};
         tenantId = (await airtable.create(TABLES.TENANTS, TenantSchema, { Name: moveIn.tenantName, ...notes })).id;
@@ -187,6 +191,7 @@ async function saveMoveIn(ctx: Context, env: Env, moveIn: MoveIn): Promise<void>
   steps.push({
     todo: `create the tenancy ${esc(label)}`,
     check: link(env, TABLES.TENANCIES, null, 'Tenancies table'),
+    action: 'create Tenancies',
     run: async () => {
       const tenancy = await airtable.create(TABLES.TENANCIES, TenancySchema, {
         Label: label,
@@ -206,6 +211,7 @@ async function saveMoveIn(ctx: Context, env: Env, moveIn: MoveIn): Promise<void>
     steps.push({
       todo: `create the ${summary}`,
       check: link(env, TABLES.CHARGES, null, 'Charges table'),
+      action: 'create Charges',
       run: async () => {
         const fields = buildRentCharge({ tenancyId, tenancyLabel: label, ...charge });
         const created = await airtable.create(TABLES.CHARGES, ChargeSchema, fields);
@@ -216,6 +222,7 @@ async function saveMoveIn(ctx: Context, env: Env, moveIn: MoveIn): Promise<void>
   steps.push({
     todo: `set room ${code} to Occupied`,
     check: link(env, TABLES.ROOMS, moveIn.roomId, 'room in Airtable'),
+    action: 'update Rooms',
     run: async () => {
       await airtable.update(TABLES.ROOMS, RoomSchema, moveIn.roomId, { Status: 'Occupied' });
       return `🚪 Room ${code} marked Occupied: ${link(env, TABLES.ROOMS, moveIn.roomId, 'Open')}`;
@@ -226,7 +233,7 @@ async function saveMoveIn(ctx: Context, env: Env, moveIn: MoveIn): Promise<void>
     try {
       done.push(await step.run());
     } catch (e) {
-      logFailure(e);
+      logFailure(step.action, e);
       await clearSession(ctx.from!.id, env.SESSION_KV);
       const text = failureText({
         status: httpStatusOf(e),
@@ -253,7 +260,7 @@ export function registerMoveIn(bot: Bot, env: Env): void {
     try {
       rooms = await airtableFor(env).fetchAll(TABLES.ROOMS, RoomSchema, { fields: ROOM_FIELDS });
     } catch (e) {
-      logFailure(e);
+      logFailure('read Rooms', e);
       await ctx.reply('Failed to load rooms. Check Worker logs.');
       return;
     }
@@ -292,7 +299,7 @@ export function registerMoveIn(bot: Bot, env: Env): void {
         });
         room = records[0] ? roomChoice(records[0].fields) : undefined;
       } catch (e) {
-        logFailure(e);
+        logFailure('read Rooms', e);
         await clearSession(userId, env.SESSION_KV);
         await ctx.reply('Failed to load the room. Check Worker logs, then use /movein to try again.');
         return;

@@ -1,5 +1,5 @@
 import { SELF, env, fetchMock } from 'cloudflare:test';
-import { afterEach, beforeEach, describe, expect, it } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import type { Env } from '../../src/types';
 
 const AIRTABLE_ORIGIN = 'https://api.airtable.com';
@@ -157,6 +157,23 @@ describe('/reminder command', () => {
     expect(text).toContain('6B Sun Peng - subtotal $1,650.00');
     expect(text).toContain('Rent');
     expect(text).not.toContain('Paid Rent');
+  });
+
+  it('logs only the HTTP status when Airtable fails', async () => {
+    const error = vi.spyOn(console, 'error').mockImplementation(() => {});
+    const telegramPayloads = stubTelegram(1);
+    fetchMock
+      .get(AIRTABLE_ORIGIN)
+      .intercept({ path: new RegExp(`/v0/appTEST/${TENANCIES}\\?.*`) })
+      .reply(403, { error: 'secret-airtable-detail' });
+    mockCharges();
+
+    await telegramUpdate(messageUpdate(3, '/reminder'));
+
+    expect(String(telegramPayloads[0].text)).toContain('Failed to load reminders');
+    expect(error).toHaveBeenCalledWith('[payment-bot] reminder failed: read Tenancies and Charges: HTTP 403');
+    expect(error.mock.calls.flat().map(String).join('\n')).not.toContain('secret-airtable-detail');
+    error.mockRestore();
   });
 
   it('rejects non-authorized users before reading Airtable', async () => {

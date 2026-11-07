@@ -232,7 +232,7 @@ If Airtable field names or status values changed, update `packages/airtable-clie
 
 ## `/moveout` and `/movein`: how they work
 
-Both commands only write to Airtable after you tap Confirm. Both use the Melbourne date for "today". Both reply to errors with an HTTP status and a link, never with the Airtable response body. The details are in Worker logs.
+Both commands only write to Airtable after you tap Confirm. Both use the Melbourne date for "today". Both reply to errors with an HTTP status and a link, never with the Airtable response body. Worker logs name the failed call and give the same status, for example `[payment-bot] movein failed: create Tenancies: HTTP 422`. Logs never include the response body either.
 
 If tapping Confirm or Cancel replies that the move-out or move-in is "already being saved, or the save has finished", the first Confirm is still running or stopped partway. Wait a minute, then check Airtable for what was written before you start the command again.
 
@@ -277,7 +277,7 @@ If a write fails, the bot replies "Move-in not finished". The reply lists the fi
 
 A failure with HTTP 4xx means that step did not save. A reply that says "This step may have saved" (a 5xx, a timeout, or an unreadable response) means Airtable may have applied the write anyway. Open that table first and look for the record before you redo the step. The Airtable client sends each create (POST) once and does not retry it. The record may still exist from that one attempt. Create it by hand only if it is not there. If you do find a duplicate, delete it by hand.
 
-If the reply says "Move-in not saved ... Nothing was changed", the very first write failed with a 4xx. Check Worker logs for the cause, then run `/movein` again.
+If the reply says "Move-in not saved ... Nothing was changed", the very first write failed with a 4xx. Worker logs show which table and status. Check that table's fields in Airtable, then run `/movein` again.
 
 ## Fixing charges due after an end date
 
