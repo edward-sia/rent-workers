@@ -9,6 +9,7 @@ import {
   melbourneDateISO,
   melbourneYesterdayISO,
 } from './format';
+import { handleMoveInText, registerMoveIn } from './movein';
 import { handleMoveOutText, registerMoveOut } from './moveout';
 import { fetchReminderBuckets, listOutstandingChargesForTenancy } from './outstanding';
 import { formatReminderMessages } from './reminder';
@@ -88,6 +89,7 @@ export function createBot(env: Env): Bot {
     }
   });
 
+  registerMoveIn(bot, env);
   registerMoveOut(bot, env);
 
   bot.command('pay', async (ctx) => {
@@ -325,6 +327,7 @@ export function createBot(env: Env): Bot {
     const text = ctx.message.text.trim();
     const session = await getSession(userId, env.SESSION_KV);
 
+    if (await handleMoveInText(ctx, env, session, text)) return;
     if (await handleMoveOutText(ctx, env, session, text)) return;
 
     if (session.step === 'enter_amount') {
