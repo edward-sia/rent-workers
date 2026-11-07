@@ -10,7 +10,7 @@ STOP. Cloudflare Workers APIs, Wrangler config, and platform limits change over 
 |---|---|
 | `src/index.ts` | Worker entrypoint: scheduled handler and `/run` fetch route |
 | `src/charges.ts` | Charge-generation orchestration |
-| `src/due-date.ts` | Pure due-date resolver |
+| `@rent/tenancy` | Pure due-date resolver and rent charge builder (shared package) |
 | `src/discord.ts` | Discord summary webhook |
 | `src/auth.ts` | `/run` bearer-token guard |
 

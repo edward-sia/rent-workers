@@ -150,7 +150,6 @@ Discord summaries and Cloudflare logs are intentionally minimized. They include 
 
 Unit tests cover:
 
-- `src/due-date.ts`
 - `src/discord.ts`
 - `src/auth.ts`
 
@@ -171,8 +170,7 @@ Known test-tooling note: the current Workers Vitest pool dependency falls back t
 ```
 src/
   index.ts     -- Worker entrypoint and route/cron wiring
-  charges.ts   -- charge-generation orchestration
-  due-date.ts  -- due date resolver
+  charges.ts   -- charge-generation orchestration (due dates and charge shape come from @rent/tenancy)
   discord.ts   -- Discord summary notification
   auth.ts      -- /run bearer auth
 test/

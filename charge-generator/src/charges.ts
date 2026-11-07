@@ -7,8 +7,8 @@ import {
   type Tenancy,
   TenancySchema,
 } from '@rent/airtable-client';
+import { buildRentCharge, resolveDueDate } from '@rent/tenancy';
 import { notifyDiscord } from './discord';
-import { resolveDueDate } from './due-date';
 
 export interface ChargesEnv {
   AIRTABLE_TOKEN: string;
@@ -73,14 +73,17 @@ export async function generateCharges(env: ChargesEnv, now = new Date()): Promis
     const dueDate = resolveDueDate(tenancy.fields, year, month);
 
     try {
-      const charge = await client.create(TABLES.CHARGES, ChargeSchema, {
-        Label: `${label} ${period} Rent`,
-        Tenancy: [tenancy.id],
-        Type: 'Rent',
-        Period: period,
-        'Due Date': dueDate,
-        Amount: rent,
-      });
+      const charge = await client.create(
+        TABLES.CHARGES,
+        ChargeSchema,
+        buildRentCharge({
+          tenancyId: tenancy.id,
+          tenancyLabel: label,
+          period,
+          dueDate,
+          amount: rent,
+        }),
+      );
       created.push(`tenancy ${tenancy.id} → charge ${charge.id} due ${dueDate}`);
     } catch (e) {
       const reason = summarizeAirtableFailure(e);
