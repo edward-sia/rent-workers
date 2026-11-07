@@ -1,4 +1,4 @@
-import { afterEach, describe, expect, it, vi } from 'vitest';
+import { describe, expect, it } from 'vitest';
 import { escapeTelegramMarkdown, formatAUD, parseAmount, parseDate, melbourneDateISO, melbourneYesterdayISO } from '../src/format';
 
 describe('formatAUD', () => {
