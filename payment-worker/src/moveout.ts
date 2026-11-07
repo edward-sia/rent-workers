@@ -1,5 +1,4 @@
 import {
-  AirtableClient,
   type AirtableRecord,
   type Charge,
   ChargeSchema,
@@ -9,6 +8,7 @@ import {
 } from '@rent/airtable-client';
 import { chargesAfter, checkEndDate, endOfMonthISO, owedThrough } from '@rent/tenancy';
 import { Bot, InlineKeyboard, type Context } from 'grammy';
+import { airtableFor } from './airtable';
 import {
   escapeTelegramMarkdown as esc,
   escapeTelegramMarkdownUrl,
@@ -26,6 +26,9 @@ interface ReplyOptions {
 }
 
 const EXPIRED = '⚠️ This move-out was already saved or has expired. Use /moveout to start again.';
+/** Plain text. A Confirm still saving, or one cut off mid-save, leaves the session at `saving`. */
+const SAVING =
+  '⏳ This move-out is already being saved, or the save has finished. Check Airtable before you try again.';
 
 function logFailure(error: unknown): void {
   console.error(`[payment-bot] moveout failed: ${error instanceof Error ? error.message : String(error)}`);
@@ -108,7 +111,7 @@ async function showConfirm(
   const userId = ctx.from!.id;
   let charges: AirtableRecord<Charge>[];
   try {
-    const all = await new AirtableClient(env).fetchAll(TABLES.CHARGES, ChargeSchema, {
+    const all = await airtableFor(env).fetchAll(TABLES.CHARGES, ChargeSchema, {
       fields: ['Label', 'Balance', 'Status', 'Due Date', 'Tenancy'],
       filterByFormula: `OR(NOT({Status} = "Paid"), IS_AFTER({Due Date}, "${endDate}"))`,
     });
@@ -130,7 +133,7 @@ async function showConfirm(
 
 async function saveMoveOut(ctx: Context, env: Env, session: WizardSession): Promise<void> {
   const userId = ctx.from!.id;
-  const airtable = new AirtableClient(env);
+  const airtable = airtableFor(env);
   const tenancyId = String(session.tenancyId);
   const endDate = String(session.endDate);
   const label = esc(String(session.tenancyLabel));
@@ -189,7 +192,7 @@ export function registerMoveOut(bot: Bot, env: Env): void {
 
     let tenancies;
     try {
-      tenancies = await new AirtableClient(env).fetchAll(TABLES.TENANCIES, TenancySchema, {
+      tenancies = await airtableFor(env).fetchAll(TABLES.TENANCIES, TenancySchema, {
         fields: ['Label', 'Balance', 'Start Date', 'End Date', 'Room'],
         filterByFormula: 'OR({End Date} = BLANK(), IS_AFTER({End Date}, TODAY()))',
       });
@@ -269,6 +272,10 @@ export function registerMoveOut(bot: Bot, env: Env): void {
   bot.callbackQuery('mo:confirm', async (ctx) => {
     await ctx.answerCallbackQuery();
     const session = await getSession(ctx.from.id, env.SESSION_KV);
+    if (session.flow === 'moveout' && session.step === 'saving') {
+      await ctx.editMessageText(SAVING);
+      return;
+    }
     if (session.flow !== 'moveout' || session.step !== 'mo_confirm' || !session.tenancyId || !session.endDate) {
       await ctx.editMessageText(EXPIRED);
       return;
@@ -283,7 +290,7 @@ export function registerMoveOut(bot: Bot, env: Env): void {
     await ctx.answerCallbackQuery();
     const session = await getSession(ctx.from.id, env.SESSION_KV);
     if (session.step === 'saving') {
-      await ctx.editMessageText(EXPIRED);
+      await ctx.editMessageText(session.flow === 'moveout' ? SAVING : EXPIRED);
       return;
     }
     if (session.flow === 'moveout') await clearSession(ctx.from.id, env.SESSION_KV);

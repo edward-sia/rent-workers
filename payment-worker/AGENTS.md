@@ -6,7 +6,8 @@ This Worker owns the Telegram payment bot.
 - `/movein` (`src/movein.ts`, prompts in `src/movein-view.ts`) creates a Tenant (unless one is reused), a Tenancy, the first Charges, then sets the Room to Occupied. It writes in that order with no rollback.
 - `/moveout` (`src/moveout.ts`) sets the tenancy `End Date`. It sets the Room to Vacant only when the end date is today (Melbourne) or earlier.
 - Callback data prefixes: `mi:` for move-in, `mo:` for move-out. `/pay` keeps its own unprefixed callbacks.
-- Confirm buttons set the KV session step to `saving` before any Airtable write. A second tap finds `saving` and writes nothing. Keep that guard.
+- Confirm buttons set the KV session step to `saving` before any Airtable write. A second tap finds `saving`, writes nothing, and says to check Airtable before trying again. Keep that guard.
+- Build the Airtable client with `airtableFor(env)` (`src/airtable.ts`, 5 s per request). `index.ts` gives grammY a 50 s webhook timeout so a Confirm's writes can all finish. Keep the two in step if you add Airtable calls to a Confirm.
 - Replies must never include raw Airtable response bodies. Show only the HTTP status (`httpStatusOf`) and link to the record. A 5xx, timeout or unreadable response may have saved, so the reply says to check before retrying.
 - Due-date, charge and tenancy rules live in `packages/tenancy`. Do not copy them into this Worker.
 - `/reminder` is read-only and shows overdue plus next-14-day outstanding charges.

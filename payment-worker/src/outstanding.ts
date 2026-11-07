@@ -1,5 +1,4 @@
 import {
-  AirtableClient,
   type AirtableRecord,
   type Charge,
   ChargeSchema,
@@ -8,6 +7,7 @@ import {
   TenancySchema,
 } from '@rent/airtable-client';
 import { addDaysISO } from '@rent/tenancy';
+import { airtableFor } from './airtable';
 import { melbourneDateISO } from './format';
 import type { Env } from './types';
 
@@ -51,7 +51,7 @@ export async function fetchReminderBuckets(
   today = melbourneDateISO(),
   horizonDays = 14,
 ): Promise<ReminderBuckets> {
-  const airtable = new AirtableClient(env);
+  const airtable = airtableFor(env);
   const [tenancies, charges] = await Promise.all([
     airtable.fetchAll(TABLES.TENANCIES, TenancySchema, {
       fields: ['Label'],

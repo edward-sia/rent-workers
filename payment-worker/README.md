@@ -102,7 +102,9 @@ The confirm screen warns when the room is currently `Occupied`. The tenancy labe
 
 Writes happen in this order, with no rollback: Tenants (when new), Tenancies, Charges (one per charge), Rooms `Status` set to `Occupied`. If a step fails, the reply lists the finished steps with links and the steps still to do. A 4xx means that step did not save. A 5xx, timeout or unreadable response means it may have saved, and the reply says to check that table before redoing it.
 
-Confirm for both flows sets the KV session step to `saving` before writing. A second tap on Confirm finds `saving` and writes nothing.
+Confirm for both flows sets the KV session step to `saving` before writing. A second tap on Confirm or Cancel finds `saving` and writes nothing. It replies that the save is already in progress or has finished, and says to check Airtable before trying again.
+
+The Airtable client in this Worker uses a 5 second timeout per request (`src/airtable.ts`). The grammY webhook handler waits up to 50 seconds (`src/index.ts`), so a slow Airtable cannot cut off a Confirm partway through. grammY's own default is 10 seconds.
 
 ## Airtable Schema
 
@@ -274,6 +276,7 @@ Test coverage includes:
 | Unit | `test/reminder.test.ts` | concise Telegram reminder formatting, Markdown escaping, and message splitting |
 | Unit | `test/session.test.ts` | KV session get/set/clear and TTL |
 | Unit | `test/auth.test.ts` | webhook secret fail-closed behavior |
+| Unit | `test/timeouts.test.ts` | the 50 second webhook timeout and the 5 second Airtable request timeout |
 | Integration | `test/integration/reminder.test.ts` | `/reminder` output, authorization, and session non-mutation |
 | Integration | `test/integration/webhook.test.ts` | GET banner and webhook secret rejection |
 | Integration | `test/integration/wizard.test.ts` | full wizard path, invalid amount, cancel, and Payment payload |
@@ -317,7 +320,8 @@ The staging deploy workflow registers the Telegram webhook automatically after d
 
 ```text
 src/
-  index.ts      -- Worker entrypoint, GET banner, Telegram secret guard, webhook handler
+  index.ts      -- Worker entrypoint, GET banner, Telegram secret guard, webhook handler and its timeout
+  airtable.ts   -- the Airtable client the bot uses, with its request timeout
   bot.ts        -- grammy bot commands, callbacks, and /pay wizard steps
   movein.ts     -- /movein flow: room, tenant, rent, start date, confirm, and the ordered writes
   movein-view.ts -- /movein prompts, confirm text, and partial-failure reply text
@@ -332,6 +336,7 @@ test/
   auth.test.ts
   format.test.ts
   session.test.ts
+  timeouts.test.ts
   integration/
     webhook.test.ts
     reminder.test.ts

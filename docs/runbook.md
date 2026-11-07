@@ -234,6 +234,8 @@ If Airtable field names or status values changed, update `packages/airtable-clie
 
 Both commands only write to Airtable after you tap Confirm. Both use the Melbourne date for "today". Both reply to errors with an HTTP status and a link, never with the Airtable response body. The details are in Worker logs.
 
+If tapping Confirm or Cancel replies that the move-out or move-in is "already being saved, or the save has finished", the first Confirm is still running or stopped partway. Wait a minute, then check Airtable for what was written before you start the command again.
+
 ### `/moveout`
 
 1. `/moveout` lists tenancies with no `End Date` or an `End Date` after today.

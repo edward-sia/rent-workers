@@ -218,14 +218,29 @@ describe('/moveout', () => {
     expect(await readSession()).toBeNull();
   });
 
-  it('second confirm writes nothing', async () => {
+  it('second confirm writes nothing and says to check Airtable', async () => {
     const telegram = stubTelegram(2);
     const saving = { ...CONFIRM_SESSION, step: 'saving', endDate: melbourneDateISO() };
     await seedSession(saving);
 
     await telegramUpdate(callbackUpdate(50, 'mo:confirm'));
 
-    expect(String(lastReply(telegram).text)).toContain('expired');
+    const reply = lastReply(telegram);
+    expect(String(reply.text)).toBe(
+      '⏳ This move-out is already being saved, or the save has finished. Check Airtable before you try again.',
+    );
+    expect(reply.parse_mode).toBeUndefined();
+    expect(await readSession()).toEqual(saving);
+  });
+
+  it('cancel during a save says the save may have finished', async () => {
+    const telegram = stubTelegram(2);
+    const saving = { ...CONFIRM_SESSION, step: 'saving', endDate: melbourneDateISO() };
+    await seedSession(saving);
+
+    await telegramUpdate(callbackUpdate(51, 'mo:cancel'));
+
+    expect(String(lastReply(telegram).text)).toContain('already being saved');
     expect(await readSession()).toEqual(saving);
   });
 

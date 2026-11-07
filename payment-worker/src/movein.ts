@@ -1,5 +1,4 @@
 import {
-  AirtableClient,
   ChargeSchema,
   formulaString,
   type Room,
@@ -19,6 +18,7 @@ import {
   type PlannedCharge,
 } from '@rent/tenancy';
 import { Bot, InlineKeyboard, type Context } from 'grammy';
+import { airtableFor } from './airtable';
 import {
   escapeTelegramMarkdown as esc,
   formatAUD,
@@ -47,6 +47,9 @@ import { clearSession, getSession, setSession } from './session';
 import type { Env, SessionChoice, WizardSession, WizardStep } from './types';
 
 const EXPIRED = '⚠️ This move-in was already saved or has expired. Use /movein to start again.';
+/** Plain text. A Confirm still saving, or one cut off mid-save, leaves the session at `saving`. */
+const SAVING =
+  '⏳ This move-in is already being saved, or the save has finished. Check Airtable before you try again.';
 const MARKDOWN = { parse_mode: 'Markdown' } as const;
 const ROOM_FIELDS = ['Code', 'Default Rent', 'Status'];
 
@@ -135,7 +138,7 @@ async function showConfirm(
 async function handleName(ctx: Context, env: Env, session: WizardSession, name: string): Promise<void> {
   let matches;
   try {
-    matches = await new AirtableClient(env).fetchAll(TABLES.TENANTS, TenantSchema, {
+    matches = await airtableFor(env).fetchAll(TABLES.TENANTS, TenantSchema, {
       fields: ['Name'],
       filterByFormula: `{Name} = ${formulaString(name)}`,
     });
@@ -159,7 +162,7 @@ async function handleName(ctx: Context, env: Env, session: WizardSession, name: 
 
 /** Do the Confirm writes in order and report which ones finished. There is no rollback. */
 async function saveMoveIn(ctx: Context, env: Env, moveIn: MoveIn): Promise<void> {
-  const airtable = new AirtableClient(env);
+  const airtable = airtableFor(env);
   const label = tenancyLabel(moveIn.roomCode, moveIn.tenantName);
   const name = esc(moveIn.tenantName);
   const code = esc(moveIn.roomCode);
@@ -248,7 +251,7 @@ export function registerMoveIn(bot: Bot, env: Env): void {
 
     let rooms;
     try {
-      rooms = await new AirtableClient(env).fetchAll(TABLES.ROOMS, RoomSchema, { fields: ROOM_FIELDS });
+      rooms = await airtableFor(env).fetchAll(TABLES.ROOMS, RoomSchema, { fields: ROOM_FIELDS });
     } catch (e) {
       logFailure(e);
       await ctx.reply('Failed to load rooms. Check Worker logs.');
@@ -283,7 +286,7 @@ export function registerMoveIn(bot: Bot, env: Env): void {
     let room = listed;
     if (!room) {
       try {
-        const records = await new AirtableClient(env).fetchAll(TABLES.ROOMS, RoomSchema, {
+        const records = await airtableFor(env).fetchAll(TABLES.ROOMS, RoomSchema, {
           fields: ROOM_FIELDS,
           filterByFormula: `RECORD_ID() = ${formulaString(roomId)}`,
         });
@@ -389,6 +392,10 @@ export function registerMoveIn(bot: Bot, env: Env): void {
   bot.callbackQuery('mi:confirm', async (ctx) => {
     await ctx.answerCallbackQuery();
     const session = await getSession(ctx.from.id, env.SESSION_KV);
+    if (session.flow === 'movein' && session.step === 'saving') {
+      await ctx.editMessageText(SAVING);
+      return;
+    }
     const moveIn = session.flow === 'movein' && session.step === 'mi_confirm' ? moveInOf(session) : null;
     if (!moveIn) {
       await ctx.editMessageText(EXPIRED);
@@ -404,7 +411,7 @@ export function registerMoveIn(bot: Bot, env: Env): void {
     await ctx.answerCallbackQuery();
     const session = await getSession(ctx.from.id, env.SESSION_KV);
     if (session.step === 'saving') {
-      await ctx.editMessageText(EXPIRED);
+      await ctx.editMessageText(session.flow === 'movein' ? SAVING : EXPIRED);
       return;
     }
     if (session.flow === 'movein') await clearSession(ctx.from.id, env.SESSION_KV);

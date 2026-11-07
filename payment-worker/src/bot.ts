@@ -1,5 +1,6 @@
-import { AirtableClient, ChargeSchema, PaymentSchema, TABLES, TenancySchema } from '@rent/airtable-client';
+import { ChargeSchema, PaymentSchema, TABLES, TenancySchema } from '@rent/airtable-client';
 import { Bot, InlineKeyboard, type Context } from 'grammy';
+import { airtableFor } from './airtable';
 import {
   escapeTelegramMarkdown,
   escapeTelegramMarkdownUrl,
@@ -58,7 +59,7 @@ export function createBot(env: Env): Bot {
     botInfo: BOT_INFO,
     client: { fetch },
   });
-  const airtable = new AirtableClient(env);
+  const airtable = airtableFor(env);
 
   bot.use(async (ctx, next) => {
     if (String(ctx.from?.id) !== env.AUTHORIZED_USER_ID) {
