@@ -1,5 +1,13 @@
 import { describe, expect, it } from 'vitest';
-import { escapeTelegramMarkdown, formatAUD, parseAmount, parseDate, melbourneDateISO, melbourneYesterdayISO } from '../src/format';
+import {
+  escapeTelegramMarkdown,
+  formatAUD,
+  httpStatusOf,
+  parseAmount,
+  parseDate,
+  melbourneDateISO,
+  melbourneYesterdayISO,
+} from '../src/format';
 
 describe('formatAUD', () => {
   it('formats with $ and 2 dp', () => {
@@ -61,5 +69,16 @@ describe('melbourneDateISO / melbourneYesterdayISO', () => {
 
   it('defaults to the current time', () => {
     expect(melbourneDateISO()).toMatch(/^\d{4}-\d{2}-\d{2}$/);
+  });
+});
+
+describe('httpStatusOf', () => {
+  it('keeps only the HTTP status from an Airtable error', () => {
+    const error = new Error('Airtable update [tblX]: HTTP 422: {"error":{"message":"secret"}}');
+    expect(httpStatusOf(error)).toBe('HTTP 422');
+  });
+
+  it('falls back when the error has no HTTP status', () => {
+    expect(httpStatusOf(new Error('network down'))).toBe('request failed');
   });
 });

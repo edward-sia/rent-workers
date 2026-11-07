@@ -9,6 +9,7 @@ import {
   melbourneDateISO,
   melbourneYesterdayISO,
 } from './format';
+import { handleMoveOutText, registerMoveOut } from './moveout';
 import { fetchReminderBuckets, listOutstandingChargesForTenancy } from './outstanding';
 import { formatReminderMessages } from './reminder';
 import { clearSession, getSession, setSession } from './session';
@@ -86,6 +87,8 @@ export function createBot(env: Env): Bot {
       await ctx.reply('Failed to load reminders. Check Worker logs for the Airtable error.');
     }
   });
+
+  registerMoveOut(bot, env);
 
   bot.command('pay', async (ctx) => {
     await clearSession(ctx.from!.id, env.SESSION_KV);
@@ -321,6 +324,8 @@ export function createBot(env: Env): Bot {
     const userId = ctx.from!.id;
     const text = ctx.message.text.trim();
     const session = await getSession(userId, env.SESSION_KV);
+
+    if (await handleMoveOutText(ctx, env, session, text)) return;
 
     if (session.step === 'enter_amount') {
       const amount = parseAmount(text);

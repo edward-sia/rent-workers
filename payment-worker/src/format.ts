@@ -55,3 +55,12 @@ export function melbourneDateISO(now: Date = new Date()): string {
 
 export const melbourneYesterdayISO = (now: Date = new Date()): string =>
   addDaysISO(melbourneDateISO(now), -1);
+
+/**
+ * The `HTTP 422`-style status from an Airtable client error, for Telegram replies.
+ * The full error message embeds the Airtable response body, so it goes to logs only.
+ */
+export function httpStatusOf(error: unknown): string {
+  const message = error instanceof Error ? error.message : String(error);
+  return /\bHTTP\s+\d{3}\b/.exec(message)?.[0] ?? 'request failed';
+}
