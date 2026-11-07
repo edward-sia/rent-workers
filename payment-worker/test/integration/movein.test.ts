@@ -37,6 +37,7 @@ afterEach(() => {
   fetchMock.assertNoPendingInterceptors();
   fetchMock.deactivate();
   vi.restoreAllMocks();
+  vi.useRealTimers();
 });
 
 const ROOM_6B = { id: 'recR1', fields: { Code: '6B-R6', 'Default Rent': 1500, Status: 'Vacant' } };
@@ -378,6 +379,53 @@ describe('/movein', () => {
     expect(session.step).toBe('mi_confirm');
     expect(session.firstAmount).toBe(600);
     expect(String(lastReply(telegram).text)).toContain(`${periodOf(start)} · ${start} · $600.00`);
+  });
+
+  it('a start this month confirmed on or after the 15th UTC saves this month and next month', async () => {
+    // The 20th in both UTC and Melbourne: the generator has already made next month's charges.
+    vi.useFakeTimers({ toFake: ['Date'] });
+    vi.setSystemTime(new Date('2026-11-20T01:00:00Z'));
+    const telegram = stubTelegram(4);
+    await seedSession({
+      ...BASE_SESSION, step: 'mi_select_first', tenantName: 'Sun Peng', monthlyRent: 1500, startDate: '2026-11-18',
+    });
+    mockWrite('POST', TENANTS, 'recN1', { Name: 'Sun Peng' });
+    mockWrite('POST', TENANCIES, 'recT1', { Label: '6B-R6 Sun Peng' });
+    const chargeBodies: any[] = [];
+    fetchMock
+      .get(AIRTABLE_ORIGIN)
+      .intercept({ path: `/v0/appTEST/${CHARGES}`, method: 'POST' })
+      .reply((opts: MockReplyOptions) => {
+        chargeBodies.push(parseBody(opts.body));
+        return { statusCode: 200, data: { id: `recC${chargeBodies.length}`, fields: { Label: 'x' } } };
+      })
+      .times(2);
+    mockWrite('PATCH', ROOMS, 'recR1', { Code: '6B-R6', Status: 'Occupied' });
+
+    await telegramUpdate(callbackUpdate(45, 'mi:f:regular'));
+    const confirm = String(lastReply(telegram).text);
+    expect(confirm).toContain('2026-11 · 2026-11-18 · $1,500.00');
+    expect(confirm).toContain('2026-12 · 2026-12-18 · $1,500.00');
+
+    await telegramUpdate(callbackUpdate(46, 'mi:confirm'));
+
+    expect(chargeBodies.map((body) => body.fields)).toEqual([
+      {
+        Label: '6B-R6 Sun Peng 2026-11 Rent', Tenancy: ['recT1'], Type: 'Rent',
+        Period: '2026-11', 'Due Date': '2026-11-18', Amount: 1500,
+      },
+      {
+        Label: '6B-R6 Sun Peng 2026-12 Rent', Tenancy: ['recT1'], Type: 'Rent',
+        Period: '2026-12', 'Due Date': '2026-12-18', Amount: 1500,
+      },
+    ]);
+    const done = String(lastReply(telegram).text);
+    expect(done).toContain('Move-in saved');
+    expect(done).toContain('2026-11 rent charge, $1,500.00 due 2026-11-18');
+    expect(done).toContain('2026-12 rent charge, $1,500.00 due 2026-12-18');
+    expect(done).toContain(`https://airtable.com/appTEST/${CHARGES}/recC1`);
+    expect(done).toContain(`https://airtable.com/appTEST/${CHARGES}/recC2`);
+    expect(await readSession()).toBeNull();
   });
 
   it('429 after the tenant is created', async () => {

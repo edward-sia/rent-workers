@@ -89,4 +89,21 @@ describe('planMoveInCharges', () => {
       { period: '2027-01', dueDate: '2027-01-05', amount: 1500 },
     ]);
   });
+
+  it('rolls the periods over into the next year', () => {
+    expect(planMoveInCharges({ ...base, startDate: '2026-12-20', todayUtc: '2027-02-16' })).toEqual([
+      { period: '2026-12', dueDate: '2026-12-20', amount: 1500 },
+      { period: '2027-01', dueDate: '2027-01-20', amount: 1500 },
+      { period: '2027-02', dueDate: '2027-02-20', amount: 1500 },
+      { period: '2027-03', dueDate: '2027-03-20', amount: 1500 },
+    ]);
+  });
+
+  it('keeps a start on the 30th as the first due date and uses the 28th after it', () => {
+    expect(planMoveInCharges({ ...base, startDate: '2027-01-30', todayUtc: '2027-02-16' })).toEqual([
+      { period: '2027-01', dueDate: '2027-01-30', amount: 1500 },
+      { period: '2027-02', dueDate: '2027-02-28', amount: 1500 },
+      { period: '2027-03', dueDate: '2027-03-28', amount: 1500 },
+    ]);
+  });
 });
