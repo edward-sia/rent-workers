@@ -56,7 +56,7 @@ Charge fields written:
 | `Due Date` | `Due Day`, then `Start Date` day, capped at 28 |
 | `Amount` | tenancy `Monthly Rent` |
 
-A tenancy is skipped (and listed as `tenancy <id> outside tenancy dates`) when that due date is before `Start Date` or after `End Date`. Both dates are inclusive. A missing `Start Date` or `End Date` means no limit on that side.
+A tenancy is skipped when that due date is before `Start Date` or after `End Date`. The Discord summary lists it as `tenancy <id>` in its own "⏭ Skipped: outside tenancy dates" field. That field appears only when at least one tenancy was skipped this way. Both dates are inclusive. A missing `Start Date` or `End Date` means no limit on that side.
 
 ## Environment Variables / Secrets
 
@@ -147,7 +147,7 @@ npx wrangler secret put RUN_TOKEN --env staging
 
 ## Notification and Log Privacy
 
-Discord summaries and Cloudflare logs are intentionally minimized. They include the period, created/skipped/error counts, status codes, and stable Airtable record IDs such as tenancy or charge IDs. They do not include tenant labels, rent amounts, or raw upstream response bodies.
+Discord summaries and Cloudflare logs are intentionally minimized. They include the period, the created, already-existed, outside-dates and error counts, status codes, and stable Airtable record IDs such as tenancy or charge IDs. They do not include tenant labels, rent amounts, or raw upstream response bodies.
 
 ## Testing
 

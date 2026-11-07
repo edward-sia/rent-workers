@@ -61,6 +61,11 @@ async function runScheduled() {
   await waitOnExecutionContext(ctx);
 }
 
+/** The Discord embed field whose name starts with `prefix`. */
+function embedField(payload: any, prefix: string): { name: string; value: string } | undefined {
+  return payload.embeds[0].fields.find((field: { name: string }) => field.name.startsWith(prefix));
+}
+
 function mockDiscord(statusCode = 204): any[] {
   const payloads: any[] = [];
   fetchMock
@@ -148,9 +153,13 @@ describe('scheduled handler', () => {
 
       await runScheduled();
 
-      const value = discordPayloads[0].embeds[0].fields[1].value;
-      expect(value).toContain('tenancy rec1 outside tenancy dates');
-      expect(value).not.toContain('Alice');
+      const outside = embedField(discordPayloads[0], '⏭ Skipped: outside tenancy dates');
+      expect(outside?.name).toBe('⏭ Skipped: outside tenancy dates (1)');
+      expect(outside?.value).toBe('tenancy rec1');
+      expect(outside?.value).not.toContain('Alice');
+      const existed = embedField(discordPayloads[0], '⏭ Already existed');
+      expect(existed?.name).toBe('⏭ Already existed (0)');
+      expect(existed?.value).not.toContain('rec1');
     });
 
     it('skips a tenancy whose due date is after End Date', async () => {
@@ -159,9 +168,47 @@ describe('scheduled handler', () => {
 
       await runScheduled();
 
-      expect(discordPayloads[0].embeds[0].fields[1].value).toContain(
-        'tenancy rec1 outside tenancy dates',
+      expect(embedField(discordPayloads[0], '⏭ Skipped: outside tenancy dates')).toEqual(
+        expect.objectContaining({ name: '⏭ Skipped: outside tenancy dates (1)', value: 'tenancy rec1' }),
       );
+      expect(embedField(discordPayloads[0], '⏭ Already existed')?.value).not.toContain('rec1');
+    });
+
+    it('logs the outside count with the other counts', async () => {
+      mockReads(tenancyRec('rec1', 'Alice', 1000, 20, { end: '2026-05-15' }));
+      mockDiscord();
+      const logs: string[] = [];
+      const originalLog = console.log;
+      console.log = (...args: unknown[]) => {
+        logs.push(args.map(String).join(' '));
+      };
+
+      try {
+        await runScheduled();
+      } finally {
+        console.log = originalLog;
+      }
+
+      expect(logs).toContain('[2026-05] created=0 skipped=0 outside=1 errors=0 discord=true');
+    });
+
+    it('creates the charge when the due date equals End Date', async () => {
+      mockReads(tenancyRec('rec1', 'Alice', 1000, 15, { end: '2026-05-15' }));
+      const createBodies: any[] = [];
+      fetchMock
+        .get(AT_ORIGIN)
+        .intercept({ path: `/v0/appTEST/${CHARGES}`, method: 'POST' })
+        .reply((opts) => {
+          createBodies.push(parseBody(opts.body));
+          return { statusCode: 200, data: { id: 'recNew', fields: { Label: 'New' } } };
+        });
+      const discordPayloads = mockDiscord();
+
+      await runScheduled();
+
+      expect(createBodies).toHaveLength(1);
+      expect(createBodies[0].fields['Due Date']).toBe('2026-05-15');
+      expect(embedField(discordPayloads[0], '⏭ Skipped: outside tenancy dates')).toBeUndefined();
     });
 
     it('creates the charge when the due date equals Start Date', async () => {

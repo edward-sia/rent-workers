@@ -81,7 +81,7 @@ If the smoke test logs show `Expected JSON` with an HTML body or a 302 login res
 
 Manual reruns are idempotent. Existing charges for the same tenancy and period are skipped.
 
-The generator also skips a tenancy when the period's due date is before its `Start Date` or after its `End Date`. The Discord summary lists these under the "Already existed" heading as `tenancy <id> outside tenancy dates`. That is expected for a tenancy that has ended or has not started. If a tenancy that should get a charge shows up there, check its `Start Date`, `End Date` and `Due Day`.
+The generator also skips a tenancy when the period's due date is before its `Start Date` or after its `End Date`. The Discord summary lists these as `tenancy <id>` under their own "⏭ Skipped: outside tenancy dates" heading. "Already existed" lists only tenancies that already had a charge for the period. The log line counts them as `outside=<n>`. That is expected for a tenancy that has ended or has not started. If a tenancy that should get a charge shows up there, check its `Start Date`, `End Date` and `Due Day`.
 
 ## Manual `/run` returns 401
 
@@ -287,7 +287,7 @@ For each charge listed:
 2. If the tenant should not pay it, delete the charge, or reduce its `Amount` when the tenant owes part of that month (for example a part month at the end of the tenancy).
 3. If a Payment is already linked to the charge, leave the charge and decide with the tenant whether to refund or move the payment.
 
-The charge generator will not create new charges after `End Date`. It skips them as `tenancy <id> outside tenancy dates`.
+The charge generator will not create new charges after `End Date`. The Discord summary lists those tenancies under "⏭ Skipped: outside tenancy dates".
 
 ## BotFather command list
 

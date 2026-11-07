@@ -48,7 +48,7 @@ export async function generateCharges(env: ChargesEnv, now = new Date()): Promis
     const reason = summarizeAirtableFailure(e);
     const msg = `Airtable read failed${reason ? ` (${reason})` : ''}`;
     console.error(`[${period}] ${msg}`);
-    await notifyDiscord(env.DISCORD_WEBHOOK_URL, period, [], [], [msg]);
+    await notifyDiscord(env.DISCORD_WEBHOOK_URL, period, { created: [], existed: [], outside: [], errors: [msg] });
     throw new Error(msg);
   }
 
@@ -58,14 +58,15 @@ export async function generateCharges(env: ChargesEnv, now = new Date()): Promis
   }
 
   const created: string[] = [];
-  const skipped: string[] = [];
+  const existed: string[] = [];
+  const outside: string[] = [];
   const errors: string[] = [];
 
   for (const tenancy of tenancies) {
     const label = tenancy.fields.Label;
 
     if (alreadyCovered.has(tenancy.id)) {
-      skipped.push(`tenancy ${tenancy.id}`);
+      existed.push(`tenancy ${tenancy.id}`);
       continue;
     }
 
@@ -73,7 +74,7 @@ export async function generateCharges(env: ChargesEnv, now = new Date()): Promis
     const dueDate = resolveDueDate(tenancy.fields, year, month);
 
     if (!isWithinTenancy(dueDate, tenancy.fields)) {
-      skipped.push(`tenancy ${tenancy.id} outside tenancy dates`);
+      outside.push(`tenancy ${tenancy.id}`);
       continue;
     }
 
@@ -100,19 +101,14 @@ export async function generateCharges(env: ChargesEnv, now = new Date()): Promis
     }
   }
 
-  const discordOk = await notifyDiscord(
-    env.DISCORD_WEBHOOK_URL,
-    period,
-    created,
-    skipped,
-    errors,
-  );
+  const discordOk = await notifyDiscord(env.DISCORD_WEBHOOK_URL, period, { created, existed, outside, errors });
 
   if (errors.length > 0) {
     console.error(`[${period}] ERRORS:\n${errors.join('\n')}`);
   }
   console.log(
-    `[${period}] created=${created.length} skipped=${skipped.length} errors=${errors.length} discord=${discordOk}`,
+    `[${period}] created=${created.length} skipped=${existed.length} outside=${outside.length} ` +
+      `errors=${errors.length} discord=${discordOk}`,
   );
 }
 
