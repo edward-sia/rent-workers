@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { TenancySchema, ChargeSchema, PaymentSchema } from '../src/schemas';
+import { TenancySchema, ChargeSchema, PaymentSchema, RoomSchema, TenantSchema } from '../src/schemas';
 
 describe('TenancySchema', () => {
   it('accepts a minimal valid tenancy', () => {
@@ -59,5 +59,29 @@ describe('PaymentSchema', () => {
       Amount: 1650,
     });
     expect(parsed.Amount).toBe(1650);
+  });
+});
+
+describe('RoomSchema', () => {
+  it('parses a room with default rent and status', () => {
+    const parsed = RoomSchema.parse({ Code: '6B-R6', 'Default Rent': 1500, Status: 'Vacant' });
+    expect(parsed).toEqual({ Code: '6B-R6', 'Default Rent': 1500, Status: 'Vacant' });
+  });
+});
+
+describe('TenantSchema', () => {
+  it('parses a tenant with notes', () => {
+    expect(TenantSchema.parse({ Name: 'Sun Peng', Notes: 'n' })).toEqual({ Name: 'Sun Peng', Notes: 'n' });
+  });
+});
+
+describe('TenancySchema links', () => {
+  it('parses Room, Tenant and Frequency', () => {
+    const parsed = TenancySchema.parse({
+      Label: 'X', Room: ['recR'], Tenant: ['recT'], Frequency: 'Monthly',
+    });
+    expect(parsed.Room).toEqual(['recR']);
+    expect(parsed.Tenant).toEqual(['recT']);
+    expect(parsed.Frequency).toBe('Monthly');
   });
 });

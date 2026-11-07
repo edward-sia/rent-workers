@@ -9,8 +9,11 @@ import {
   AirtableClient,
   ChargeSchema,
   PaymentSchema,
+  RoomSchema,
   TABLES,
   TenancySchema,
+  TenantSchema,
+  formulaString,
 } from '@rent/airtable-client';
 
 const client = new AirtableClient({
@@ -35,7 +38,24 @@ const payment = await client.create(
   PaymentSchema,
   { Label: 'Example 2026-05-01 $1,650.00', Charge: [charge.id], Amount: 1650 },
 );
+
+// PATCH one record; only the given fields change.
+const room = await client.update(
+  TABLES.ROOMS,
+  RoomSchema,
+  'rec123',
+  { Status: 'Occupied' },
+);
+
+// Build a filterByFormula value from user text (escapes `\` and `"`).
+const tenants = await client.fetchAll(TABLES.TENANTS, TenantSchema, {
+  filterByFormula: `{Name} = ${formulaString('Sun Peng')}`,
+});
 ```
+
+Tables: `TENANCIES`, `CHARGES`, `PAYMENTS`, `TENANTS`, `ROOMS`.
+`RoomSchema` has `Code`, `Default Rent` and `Status`. `TenantSchema` has `Name` and `Notes`.
+`TenancySchema` also has the `Room` and `Tenant` links and `Frequency`.
 
 ## Behavior
 
@@ -45,6 +65,7 @@ const payment = await client.create(
 - Includes field-path details in schema mismatch errors.
 - Accepts current Charge status values used by the Workers, including `Due`, `Unpaid`, `Partial`, `Paid`, and `Overdue`.
 - Applies a 10 second request timeout by default.
+- `update` sends a PATCH to one record and parses the returned fields with the schema.
 - Retries network errors and 5xx responses up to two times.
 - Fails fast on 4xx responses.
 
@@ -57,6 +78,8 @@ AIRTABLE_TOKEN=... AIRTABLE_BASE_ID=app6He8xRaUzNBTDl npm run check:schema
 ```
 
 The GitHub `schema-check` workflow runs the same check nightly and alerts Discord when fields drift.
+
+The check also confirms that Rooms `Status` has the options `Occupied` and `Vacant`, and that Tenancies `Frequency` has `Monthly`.
 
 ## Adding Tables or Fields
 

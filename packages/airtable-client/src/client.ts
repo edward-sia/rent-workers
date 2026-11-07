@@ -96,6 +96,33 @@ export class AirtableClient {
     return { id: data.id, fields: parsed.data };
   }
 
+  async update<T>(
+    tableId:  string,
+    schema:   z.ZodType<T>,
+    recordId: string,
+    fields:   Partial<T>,
+  ): Promise<AirtableRecord<T>> {
+    const url = `${this.baseUrl()}/${tableId}/${recordId}`;
+    let res: Response;
+    try {
+      res = await this.request(url, {
+        method: 'PATCH',
+        body:   JSON.stringify({ fields }),
+      });
+    } catch (e) {
+      throw new Error(`Airtable update [${tableId}]: ${(e as Error).message}`);
+    }
+    const data = await res.json() as { id: string; fields: unknown };
+    const parsed = schema.safeParse(data.fields);
+    if (!parsed.success) {
+      const issue = parsed.error.issues[0];
+      throw new Error(
+        `Airtable schema mismatch on update [${tableId}/${data.id}] at ${issue?.path.join('.')}: ${issue?.message}`,
+      );
+    }
+    return { id: data.id, fields: parsed.data };
+  }
+
   private baseUrl(): string {
     return `https://api.airtable.com/v0/${this.env.AIRTABLE_BASE_ID}`;
   }

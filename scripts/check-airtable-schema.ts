@@ -4,6 +4,7 @@ interface AirtableField {
   id: string;
   name: string;
   type: string;
+  options?: { choices?: { name: string }[] };
 }
 
 interface AirtableTable {
@@ -24,6 +25,9 @@ const REQUIRED_FIELDS = {
     'End Date': ['date'],
     'Due Day': ['number'],
     Balance: ['number', 'currency', 'rollup', 'formula'],
+    Room: ['multipleRecordLinks'],
+    Tenant: ['multipleRecordLinks'],
+    Frequency: ['singleSelect'],
   },
   [TABLES.CHARGES]: {
     Label: ['singleLineText'],
@@ -43,7 +47,22 @@ const REQUIRED_FIELDS = {
     Method: ['singleSelect'],
     Notes: ['multilineText', 'singleLineText'],
   },
+  [TABLES.ROOMS]: {
+    Code: ['singleLineText'],
+    'Default Rent': ['currency', 'number'],
+    Status: ['singleSelect'],
+    Tenancies: ['multipleRecordLinks'],
+  },
+  [TABLES.TENANTS]: {
+    Name: ['singleLineText'],
+    Notes: ['multilineText', 'richText'],
+  },
 } as const satisfies Record<string, Record<string, readonly string[]>>;
+
+const REQUIRED_CHOICES: Record<string, Record<string, readonly string[]>> = {
+  [TABLES.ROOMS]: { Status: ['Occupied', 'Vacant'] },
+  [TABLES.TENANCIES]: { Frequency: ['Monthly'] },
+};
 
 function isAirtableField(value: unknown): value is AirtableField {
   return Boolean(
@@ -122,6 +141,16 @@ function findSchemaDrift(tables: AirtableTable[]): string[] {
         problems.push(
           `[${table.name}] field "${fieldName}" is type "${field.type}", expected one of: ${allowedTypes.join(', ')}`,
         );
+      }
+
+      const requiredChoices = REQUIRED_CHOICES[tableId]?.[fieldName];
+      if (requiredChoices) {
+        const present = new Set((field.options?.choices ?? []).map((choice) => choice.name));
+        for (const choice of requiredChoices) {
+          if (!present.has(choice)) {
+            problems.push(`[${table.name}] field "${fieldName}" missing option: ${choice}`);
+          }
+        }
       }
     }
   }
