@@ -14,6 +14,8 @@ STOP. Cloudflare Workers APIs, Wrangler config, and platform limits change over 
 | `src/discord.ts` | Discord summary webhook |
 | `src/auth.ts` | `/run` bearer-token guard |
 
+Tenancies whose resolved due date falls before `Start Date` or after `End Date` are skipped (`isWithinTenancy` in `@rent/tenancy`). A missing bound means no limit on that side.
+
 Airtable I/O lives in the shared workspace package `@rent/airtable-client`; do not reintroduce local Airtable fetch helpers in this worker.
 
 Discord notifications and Cloudflare logs must stay minimized: use counts, status codes, and stable Airtable record IDs, not tenant labels, rent amounts, or raw upstream response bodies.

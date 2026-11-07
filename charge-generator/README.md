@@ -15,6 +15,7 @@ Cron fires on the 15th
   -> Fetch active tenancies from Airtable
   -> Fetch existing Charges for next month's YYYY-MM period
   -> Skip already-covered tenancies
+  -> Skip tenancies whose due date is outside Start Date..End Date
   -> Create missing Charge records
   -> Post Discord summary
   -> Log counts/errors to Cloudflare
@@ -54,6 +55,8 @@ Charge fields written:
 | `Period` | `YYYY-MM` |
 | `Due Date` | `Due Day`, then `Start Date` day, capped at 28 |
 | `Amount` | tenancy `Monthly Rent` |
+
+A tenancy is skipped (and listed as `tenancy <id> outside tenancy dates`) when that due date is before `Start Date` or after `End Date`. Both dates are inclusive. A missing `Start Date` or `End Date` means no limit on that side.
 
 ## Environment Variables / Secrets
 

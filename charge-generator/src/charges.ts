@@ -7,7 +7,7 @@ import {
   type Tenancy,
   TenancySchema,
 } from '@rent/airtable-client';
-import { buildRentCharge, resolveDueDate } from '@rent/tenancy';
+import { buildRentCharge, isWithinTenancy, resolveDueDate } from '@rent/tenancy';
 import { notifyDiscord } from './discord';
 
 export interface ChargesEnv {
@@ -71,6 +71,11 @@ export async function generateCharges(env: ChargesEnv, now = new Date()): Promis
 
     const rent = tenancy.fields['Monthly Rent'] ?? 0;
     const dueDate = resolveDueDate(tenancy.fields, year, month);
+
+    if (!isWithinTenancy(dueDate, tenancy.fields)) {
+      skipped.push(`tenancy ${tenancy.id} outside tenancy dates`);
+      continue;
+    }
 
     try {
       const charge = await client.create(
