@@ -20,6 +20,27 @@ export interface AirtableClientOptions {
   retries?: number;
 }
 
+const DEFAULT_TIMEOUT_MS = 10_000;
+const DEFAULT_RETRIES = 2;
+
+/** The wait before retry number `attempt + 1`: 200 ms, then 800 ms (4x growth). */
+export function retryBackoffMs(attempt: number): number {
+  return 200 * Math.pow(4, attempt);
+}
+
+/**
+ * The longest one call can take before it fails, when every attempt runs to its timeout.
+ * A POST is sent once. A GET or PATCH is tried `retries + 1` times, with a wait between tries.
+ * Use it to check that a run of calls fits inside a caller's own deadline.
+ */
+export function worstCaseCallMs(method: 'GET' | 'POST' | 'PATCH', opts: AirtableClientOptions = {}): number {
+  const timeoutMs = opts.timeoutMs ?? DEFAULT_TIMEOUT_MS;
+  const retries = method === 'POST' ? 0 : opts.retries ?? DEFAULT_RETRIES;
+  let total = (retries + 1) * timeoutMs;
+  for (let attempt = 0; attempt < retries; attempt += 1) total += retryBackoffMs(attempt);
+  return total;
+}
+
 interface AirtableListResponse {
   records: { id: string; fields: unknown }[];
   offset?: string;
@@ -33,8 +54,8 @@ export class AirtableClient {
     private readonly env: AirtableEnv,
     opts: AirtableClientOptions = {},
   ) {
-    this.timeoutMs = opts.timeoutMs ?? 10_000;
-    this.retries   = opts.retries   ?? 2;
+    this.timeoutMs = opts.timeoutMs ?? DEFAULT_TIMEOUT_MS;
+    this.retries   = opts.retries   ?? DEFAULT_RETRIES;
   }
 
   async fetchAll<T>(
@@ -172,8 +193,7 @@ export class AirtableClient {
   }
 
   private backoffMs(attempt: number): number {
-    // 200ms, 800ms (4x growth)
-    return 200 * Math.pow(4, attempt);
+    return retryBackoffMs(attempt);
   }
 
   private sleep(ms: number): Promise<void> {

@@ -18,6 +18,8 @@ Use `npm run build:production` after changing production deploy workflows or top
 
 Keep due-date, charge and tenancy rules in `packages/tenancy`; it stays free of I/O.
 
-`/movein` and `/moveout` live in `payment-worker/src/movein.ts` and `moveout.ts`.
+`/movein` and `/moveout` live in `payment-worker/src/movein.ts` and `moveout.ts`. `/movein` also records the bond as a Charges record with `Type` = `Bond` and no `Period`, written last. The charge generator treats any charge with next month's `Period` as that month's rent, so a bond must never get one.
+
+A Confirm's Airtable writes must fit inside the bot's 50 s webhook timeout. `payment-worker/src/budget.ts` adds up the slowest move-in Confirm, and a test checks it. Update it when a Confirm gains an Airtable call.
 
 When behavior, configuration, secrets, commands, file layout, or operations change, update the relevant README plus `docs/runbook.md` in the same change. Keep `CLAUDE.md` aligned with this file when adding agent-facing instructions.

@@ -118,7 +118,9 @@ After the claim, the session step is set to `saving`, so Cancel and the move-in 
 
 KV alone can't stop two taps that arrive together. Its `get` and `put` are separate calls, and KV reads can be stale for up to a minute. Two webhook requests could both read the confirm step and both save.
 
-The Airtable client in this Worker uses a 5 second timeout per request (`src/airtable.ts`). The grammY webhook handler waits up to 50 seconds (`src/index.ts`), so a slow Airtable cannot cut off a Confirm partway through. grammY's own default is 10 seconds.
+The Airtable client in this Worker uses a 4 second timeout per request (`src/airtable.ts`). The grammY webhook handler waits up to 50 seconds (`src/budget.ts`), so a slow Airtable cannot cut off a Confirm partway through. grammY's own default is 10 seconds.
+
+The longest Confirm is a move-in with four rent charges and a bond. That's seven POSTs, sent once each, and one room PATCH, tried up to three times. If every call ran to its timeout, that would take 41 seconds. `src/budget.ts` works this out from the client's retry rules and `MAX_MOVE_IN_RENT_CHARGES`, and `test/timeouts.test.ts` fails if it plus 8 seconds for the lock, KV and Telegram doesn't fit in 50 seconds. Adding an Airtable call to a Confirm means updating `budget.ts`.
 
 ## Airtable Schema
 
@@ -299,7 +301,7 @@ Test coverage includes:
 | Unit | `test/reminder.test.ts` | concise Telegram reminder formatting, Markdown escaping, and message splitting |
 | Unit | `test/session.test.ts` | KV session get/set/clear and TTL |
 | Unit | `test/auth.test.ts` | webhook secret fail-closed behavior |
-| Unit | `test/timeouts.test.ts` | the 50 second webhook timeout and the 5 second Airtable request timeout |
+| Unit | `test/timeouts.test.ts` | the 50 second webhook timeout, the 4 second Airtable request timeout, and that the slowest move-in Confirm fits inside the webhook timeout |
 | Unit | `test/confirm.test.ts` | operation IDs, Confirm callback matching, and the claimed, taken and failed results |
 | Integration | `test/integration/confirm-lock.test.ts` | `ConfirmLock` gives one claim per operation, including many claims at once, and keeps users apart |
 | Integration | `test/integration/saving-session.test.ts` | every button and some typed text, against a `saving` session of each flow, leave the session, Airtable and the shown buttons unchanged |
@@ -350,6 +352,7 @@ The staging deploy workflow registers the Telegram webhook automatically after d
 src/
   index.ts      -- Worker entrypoint, GET banner, Telegram secret guard, webhook handler and its timeout
   airtable.ts   -- the Airtable client the bot uses, with its request timeout
+  budget.ts     -- the webhook timeout and the slowest move-in Confirm's Airtable time
   bot.ts        -- grammy bot commands, callbacks, and /pay wizard steps
   movein.ts     -- /movein flow: room, tenant, rent, start date, confirm, and the ordered writes
   movein-view.ts -- /movein prompts, confirm text, and partial-failure reply text
