@@ -1,16 +1,10 @@
 import { webhookCallback } from 'grammy';
 import { createBot } from './bot';
 import { requireWebhookSecret } from './auth';
+import { WEBHOOK_TIMEOUT_MS } from './budget';
 import type { Env } from './types';
 
 export { ConfirmLock } from './confirm-lock';
-
-/**
- * How long grammY waits for a handler before it gives up. Its default is 10 s, which a
- * move-in Confirm against a slow Airtable can pass. Giving up mid-save leaves the session
- * at `saving` with some writes done.
- */
-const WEBHOOK_TIMEOUT_MS = 50_000;
 
 export default {
   async fetch(request: Request, env: Env): Promise<Response> {

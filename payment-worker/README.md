@@ -84,8 +84,9 @@ If the tenancy update fails with a 4xx, nothing changed. If it fails with a 5xx 
   -> Start date        Today | 1st of next month | manual date; not more than 60 days in the past
   -> First payment     Regular monthly from start date | Part month, then monthly on the 1st
   -> (part month only) amount: suggested rent x 12 / 365 per day, or typed
-  -> Confirm           shows the tenancy, due day, and every charge to create
-  -> Tenant, Tenancy, Charges, then Room are written
+  -> Bond              suggested one month of rent, a typed amount, or No bond; due on the start date
+  -> Confirm           shows the tenancy, due day, every charge to create, and the bond
+  -> Tenant, Tenancy, rent Charges, Room, then the Bond charge are written
 ```
 
 First-payment options:
@@ -96,6 +97,8 @@ First-payment options:
 | Part month, then monthly on the 1st | A prorated amount for the rest of the start month, due on the start date | 1 |
 
 The part-month option is not offered when the start date is already the 1st.
+
+The bond is a Charges record with `Type` = `Bond`, due on the start date. It has no `Period`, because the charge generator treats any charge with next month's `Period` as that month's rent. It shows in `/reminder` as "{due date} Bond", and the tenant pays it with `/pay` like any other charge. The bot writes it last, so if it fails the rest of the move-in is already saved. Bond refunds and deductions at move-out are still done by hand in Airtable.
 
 Charges created: the first charge for the start month, plus one regular charge for each later month the charge generator has already covered. The generator runs on the 15th (UTC), so if the bot runs on or after the 15th (UTC) it also creates next month's charge. Otherwise the generator creates it later.
 
@@ -115,7 +118,9 @@ After the claim, the session step is set to `saving`, so Cancel and the move-in 
 
 KV alone can't stop two taps that arrive together. Its `get` and `put` are separate calls, and KV reads can be stale for up to a minute. Two webhook requests could both read the confirm step and both save.
 
-The Airtable client in this Worker uses a 5 second timeout per request (`src/airtable.ts`). The grammY webhook handler waits up to 50 seconds (`src/index.ts`), so a slow Airtable cannot cut off a Confirm partway through. grammY's own default is 10 seconds.
+The Airtable client in this Worker uses a 4 second timeout per request (`src/airtable.ts`). The grammY webhook handler waits up to 50 seconds (`src/budget.ts`), so a slow Airtable cannot cut off a Confirm partway through. grammY's own default is 10 seconds.
+
+The longest Confirm is a move-in with four rent charges and a bond. That's seven POSTs, sent once each, and one room PATCH, tried up to three times. If every call ran to its timeout, that would take 41 seconds. `src/budget.ts` works this out from the client's retry rules and `MAX_MOVE_IN_RENT_CHARGES`, and `test/timeouts.test.ts` fails if it plus 8 seconds for the lock, KV and Telegram doesn't fit in 50 seconds. Adding an Airtable call to a Confirm means updating `budget.ts`.
 
 ## Airtable Schema
 
@@ -157,10 +162,11 @@ Fields written by `/movein` and `/moveout`:
 | Tenants | `Name`, `Notes` (only for a new tenant) |
 | Tenancies (create) | `Label`, `Room`, `Tenant`, `Start Date`, `Due Day`, `Monthly Rent`, `Frequency` = `Monthly` |
 | Tenancies (move-out) | `End Date` |
-| Charges | Built by `buildRentCharge` in `@rent/tenancy`: `Label`, `Tenancy`, `Type` = `Rent`, `Period`, `Due Date`, `Amount` |
+| Charges (rent) | Built by `buildRentCharge` in `@rent/tenancy`: `Label`, `Tenancy`, `Type` = `Rent`, `Period`, `Due Date`, `Amount` |
+| Charges (bond) | Built by `buildBondCharge` in `@rent/tenancy`: `Label` = `{tenancy label} Bond`, `Tenancy`, `Type` = `Bond`, `Due Date` = start date, `Amount`. No `Period`. |
 | Rooms | `Status` = `Occupied` (move-in) or `Vacant` (move-out) |
 
-Free Airtable plans allow a limited number of API calls per month. A move-in costs about 5 to 7 calls and a move-out about 4.
+Free Airtable plans allow a limited number of API calls per month. A move-in costs about 5 to 8 calls (one more with a bond) and a move-out about 4. The Charges `Type` field needs a `Bond` option, or the bond write fails with HTTP 422.
 
 ## Environment
 
@@ -257,7 +263,7 @@ Open Telegram, find the bot, and send `/help`.
 |---|---|
 | `/pay` | Start payment wizard |
 | `/reminder` | Show overdue payments and payments due in the next 14 days |
-| `/movein` | Move a tenant into a room: creates the Tenant, Tenancy and first Charges, and sets the room to Occupied |
+| `/movein` | Move a tenant into a room: creates the Tenant, Tenancy and first Charges, sets the room to Occupied, and adds a Bond charge |
 | `/moveout` | End a tenancy: sets the tenancy End Date, and sets the room to Vacant when the end date is today or earlier |
 | `/cancel` | Cancel any flow from any step |
 | `/help` or `/start` | Show command list |
@@ -295,7 +301,7 @@ Test coverage includes:
 | Unit | `test/reminder.test.ts` | concise Telegram reminder formatting, Markdown escaping, and message splitting |
 | Unit | `test/session.test.ts` | KV session get/set/clear and TTL |
 | Unit | `test/auth.test.ts` | webhook secret fail-closed behavior |
-| Unit | `test/timeouts.test.ts` | the 50 second webhook timeout and the 5 second Airtable request timeout |
+| Unit | `test/timeouts.test.ts` | the 50 second webhook timeout, the 4 second Airtable request timeout, and that the slowest move-in Confirm fits inside the webhook timeout |
 | Unit | `test/confirm.test.ts` | operation IDs, Confirm callback matching, and the claimed, taken and failed results |
 | Integration | `test/integration/confirm-lock.test.ts` | `ConfirmLock` gives one claim per operation, including many claims at once, and keeps users apart |
 | Integration | `test/integration/saving-session.test.ts` | every button and some typed text, against a `saving` session of each flow, leave the session, Airtable and the shown buttons unchanged |
@@ -304,7 +310,7 @@ Test coverage includes:
 | Integration | `test/integration/webhook.test.ts` | GET banner and webhook secret rejection |
 | Integration | `test/integration/wizard.test.ts` | full wizard path, invalid amount, cancel, Payment payload, two Confirm taps at once, and a Confirm from an older screen |
 | Integration | `test/integration/moveout.test.ts` | `/moveout` end dates, charges-after-end-date warning, room Vacant rule, stale, double and simultaneous confirms, and partial-failure replies |
-| Integration | `test/integration/movein.test.ts` | `/movein` new and existing tenants, first-payment options, written payloads, occupied-room warning, handover from `/moveout`, simultaneous and older-screen confirms, charges that changed after the confirm screen, and partial-failure replies |
+| Integration | `test/integration/movein.test.ts` | `/movein` new and existing tenants, first-payment options, bond step and Bond charge, written payloads, occupied-room warning, handover from `/moveout`, simultaneous and older-screen confirms, charges that changed after the confirm screen, and partial-failure replies |
 | Helper | `test/integration/helpers.ts` | shared Telegram update builders, Airtable and Telegram mocks, and table IDs for the integration tests |
 
 Run from the repo root:
@@ -346,6 +352,7 @@ The staging deploy workflow registers the Telegram webhook automatically after d
 src/
   index.ts      -- Worker entrypoint, GET banner, Telegram secret guard, webhook handler and its timeout
   airtable.ts   -- the Airtable client the bot uses, with its request timeout
+  budget.ts     -- the webhook timeout and the slowest move-in Confirm's Airtable time
   bot.ts        -- grammy bot commands, callbacks, and /pay wizard steps
   movein.ts     -- /movein flow: room, tenant, rent, start date, confirm, and the ordered writes
   movein-view.ts -- /movein prompts, confirm text, and partial-failure reply text

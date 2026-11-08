@@ -33,7 +33,7 @@ Rooms     ---- read by payment-worker; Status updated by /movein and /moveout
 |---|---|
 | `/pay` | Record a payment against an outstanding charge |
 | `/reminder` | Show overdue charges and charges due in the next 14 days |
-| `/movein` | Pick a room, name a tenant, choose the rent and start date, then create the Tenant, Tenancy, first Charges and set the room to Occupied |
+| `/movein` | Pick a room, name a tenant, choose the rent and start date, then create the Tenant, Tenancy, first Charges, set the room to Occupied, and add a Bond charge |
 | `/moveout` | Pick a tenancy and an end date, then set the tenancy `End Date` and, when the end date is today or earlier, set the room to Vacant |
 | `/cancel` | Cancel the current flow |
 

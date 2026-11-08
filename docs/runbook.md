@@ -160,7 +160,7 @@ Check:
 2. The Airtable PAT can read the base metadata/records needed by `scripts/check-airtable-schema.ts`.
 3. The output diff for renamed, deleted, or type-changed fields.
 
-The check covers Tenancies, Charges, Payments, Rooms and Tenants fields. It also checks that Rooms `Status` has the select options `Occupied` and `Vacant`, and that Tenancies `Frequency` has the option `Monthly`. If someone renames one of those options in Airtable, `/movein` and `/moveout` would fail to write, so this check fails first.
+The check covers Tenancies, Charges, Payments, Rooms and Tenants fields. It also checks that Rooms `Status` has the select options `Occupied` and `Vacant`, that Tenancies `Frequency` has the option `Monthly`, and that Charges `Type`, when it is a single select, has the options `Rent` and `Bond`. If someone renames one of those options in Airtable, `/movein` and `/moveout` would fail to write, so this check fails first.
 
 Fix:
 
@@ -261,10 +261,13 @@ If the reply says "Move-out may have saved", open the tenancy link and check whe
 4. Pick how the first payment works:
    - **Regular monthly from start date.** The first charge is the full rent, due on the start date. Later charges fall due on the same day each month (day 28 at most).
    - **Part month, then monthly on the 1st.** The first charge is the prorated amount for the rest of the start month (rent x 12 / 365 per day, or an amount you type), due on the start date. Later charges are due on the 1st. This option is not shown when the start date is the 1st.
-5. The confirm screen lists the tenant, tenancy label (`{Room code} {Tenant name}`), due day and every charge. It warns if the room is already `Occupied`.
-6. Confirm creates the first charge and, when the bot runs on or after the 15th (UTC), next month's charge as well. Before the 15th the charge generator creates next month's charge on its run.
+5. Set the bond. Tap the suggestion (one month of rent), type a different amount, or tap **No bond**. The bond becomes a Charges record with `Type` = `Bond`, due on the start date, so it shows in `/reminder` and is paid with `/pay`.
+6. The confirm screen lists the tenant, tenancy label (`{Room code} {Tenant name}`), due day, every charge and the bond. It warns if the room is already `Occupied`.
+7. Confirm creates the first charge and, when the bot runs on or after the 15th (UTC), next month's charge as well. Before the 15th the charge generator creates next month's charge on its run.
 
-Cost on the Airtable free plan: a move-in uses about 5 to 7 API calls and a move-out about 4. A full staging test run is about 30 calls.
+Bond refunds and deductions at move-out are not in the bot. Record them in Airtable by hand.
+
+Cost on the Airtable free plan: a move-in uses about 5 to 8 API calls (one more with a bond) and a move-out about 4. A full staging test run is about 30 calls.
 
 ## Finishing a half-done move-in
 
@@ -272,16 +275,19 @@ Confirm writes records in this order, with no rollback:
 
 1. Tenants (skipped when you reused an existing tenant)
 2. Tenancies
-3. Charges (one write per charge)
+3. Charges (one write per rent charge)
 4. Rooms: `Status` set to `Occupied`
+5. The Bond charge, when there is a bond
 
 If a write fails, the bot replies "Move-in not finished". The reply lists the finished steps with links and lists the steps still to do. To finish:
 
 1. Open each link and confirm those records look right.
-2. For each step still to do, create the record in Airtable by hand: the Tenancy (with `Room`, `Tenant`, `Start Date`, `Due Day`, `Monthly Rent`, `Frequency` = `Monthly`), then the Charges (`Tenancy`, `Type` = `Rent`, `Period`, `Due Date`, `Amount`, label `{tenancy label} {YYYY-MM} Rent`), then the room `Status`.
+2. For each step still to do, create the record in Airtable by hand: the Tenancy (with `Room`, `Tenant`, `Start Date`, `Due Day`, `Monthly Rent`, `Frequency` = `Monthly`), then the Charges (`Tenancy`, `Type` = `Rent`, `Period`, `Due Date`, `Amount`, label `{tenancy label} {YYYY-MM} Rent`), then the room `Status`, then the Bond charge (`Tenancy`, `Type` = `Bond`, `Due Date` = start date, `Amount`, label `{tenancy label} Bond`, and leave `Period` empty).
 3. Do not create a charge that already exists. The charge generator skips a period that already has a charge for the tenancy.
 
 A failure with HTTP 4xx means that step did not save. A reply that says "This step may have saved" (a 5xx, a timeout, or an unreadable response) means Airtable may have applied the write anyway. Open that table first and look for the record before you redo the step. The Airtable client sends each create (POST) once and does not retry it. The record may still exist from that one attempt. Create it by hand only if it is not there. If you do find a duplicate, delete it by hand.
+
+If only the bond step failed with HTTP 422, the Charges `Type` field probably has no `Bond` option. Add the option in Airtable, then create the Bond charge by hand. The schema check reports a missing `Bond` option.
 
 If the reply says "Move-in not saved ... Nothing was changed", the very first write failed with a 4xx. Worker logs show which table and status. Check that table's fields in Airtable, then run `/movein` again.
 

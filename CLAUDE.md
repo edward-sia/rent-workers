@@ -8,6 +8,8 @@ Use the same repo conventions as `AGENTS.md`.
 - For `payment-worker`, read `payment-worker/AGENTS.md` before changing Telegram commands, the `/pay`, `/movein` and `/moveout` flows, or the `/reminder` outstanding-payment output.
 - Keep due-date, charge and tenancy rules in `packages/tenancy`; it stays free of I/O.
 - `/movein` and `/moveout` live in `payment-worker/src/movein.ts` and `moveout.ts`.
+- `/movein` records the bond as a Charges record with `Type` = `Bond` and no `Period`, written last. Never give it a `Period`: the charge generator would count it as that month's rent.
+- A Confirm's Airtable writes must fit inside the 50 s webhook timeout. Update `payment-worker/src/budget.ts` when a Confirm gains an Airtable call.
 - Keep `/reminder` output charge-level and due-date sorted when changing its filtering, grouping, or formatting.
 - For staging CI/CD, read `docs/staging-cicd.md` before changing GitHub Actions, Wrangler environments, or Cloudflare secrets.
 - For production CI/CD, read `docs/production-cicd.md` before changing production deployment workflows or top-level Wrangler production config.

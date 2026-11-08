@@ -12,6 +12,13 @@ export interface PlannedCharge {
 /** How many days back a start date may be before we treat it as a typo. */
 const MAX_DAYS_IN_PAST = 60;
 
+/**
+ * The most rent charges one move-in can create: a start 60 days back, confirmed on or after
+ * the 15th, covers four months. A test checks this against every allowed start date. The bot
+ * uses it to make sure a Confirm's writes fit inside its webhook timeout.
+ */
+export const MAX_MOVE_IN_RENT_CHARGES = 4;
+
 /** The generator runs on this day of the month (UTC) and creates next month's charges. */
 const GENERATOR_RUN_DAY = 15;
 

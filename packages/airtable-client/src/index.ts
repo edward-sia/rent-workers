@@ -9,6 +9,7 @@ export {
 export { formulaString } from './formula';
 export {
   AirtableClient,
+  worstCaseCallMs,
   type AirtableEnv,
   type AirtableRecord,
   type QueryParams,

@@ -135,6 +135,7 @@ function confirmSession(startDate: string): object {
     startDate,
     firstOption: 'regular',
     firstAmount: 1500,
+    bond: 0,
     opId: OP_ID,
     plannedCharges,
   };
@@ -143,7 +144,7 @@ function confirmSession(startDate: string): object {
 describe('/movein', () => {
   it('full move-in with a new tenant', async () => {
     const start = futureFirst();
-    const telegram = stubTelegram(15);
+    const telegram = stubTelegram(17);
     const roomsGet = mockGet(ROOMS, [
       { id: 'recR2', fields: { Code: '1A', 'Default Rent': 1200, Status: 'Occupied' } },
       ROOM_6B,
@@ -152,7 +153,7 @@ describe('/movein', () => {
     const nameGet = mockGet(TENANTS, []);
     const tenantPost = mockWrite('POST', TENANTS, 'recN1', { Name: 'Sun_Peng*' });
     const tenancyPost = mockWrite('POST', TENANCIES, 'recT1', { Label: '6B-R6 Sun_Peng*' });
-    const chargePost = mockWrite('POST', CHARGES, 'recC1', { Label: `6B-R6 Sun_Peng* ${periodOf(start)} Rent` });
+    const chargePost = mockWrite('POST', CHARGES, 'recC1', { Label: `6B-R6 Sun_Peng* ${periodOf(start)} Rent` }, 200, 2);
     const roomPatch = mockWrite('PATCH', ROOMS, 'recR1', { Code: '6B-R6', Status: 'Occupied' });
 
     await telegramUpdate(messageUpdate(1, '/movein'));
@@ -175,8 +176,15 @@ describe('/movein', () => {
     expect(buttonData([lastReply(telegram)])).toEqual(['mi:f:regular']);
 
     await telegramUpdate(callbackUpdate(8, 'mi:f:regular'));
+    const bondAsk = String(lastReply(telegram).text);
+    expect(bondAsk).toContain(`due ${start}`);
+    expect(bondAsk).toContain('Suggested: $1,500.00 (one month of rent)');
+    expect(buttonData([lastReply(telegram)])).toEqual(['mi:bond:suggested', 'mi:bond:none']);
+
+    await telegramUpdate(callbackUpdate(81, 'mi:bond:suggested'));
     const confirm = String(lastReply(telegram).text);
     expect(confirm).toContain(`${periodOf(start)} · ${start} · $1,500.00`);
+    expect(confirm).toContain(`• Bond · ${start} · $1,500.00`);
     expect(confirm).not.toContain('currently Occupied');
     expect(buttonData([lastReply(telegram)])).toEqual([expect.stringMatching(/^mi:confirm:[0-9a-f]{12}$/), 'mi:cancel']);
 
@@ -194,16 +202,20 @@ describe('/movein', () => {
         Frequency: 'Monthly',
       },
     }]);
-    expect(chargePost.bodies).toEqual([{
-      fields: {
-        Label: `6B-R6 Sun_Peng* ${periodOf(start)} Rent`,
-        Tenancy: ['recT1'],
-        Type: 'Rent',
-        Period: periodOf(start),
-        'Due Date': start,
-        Amount: 1500,
+    expect(chargePost.bodies).toEqual([
+      {
+        fields: {
+          Label: `6B-R6 Sun_Peng* ${periodOf(start)} Rent`,
+          Tenancy: ['recT1'],
+          Type: 'Rent',
+          Period: periodOf(start),
+          'Due Date': start,
+          Amount: 1500,
+        },
       },
-    }]);
+      // No Period: the charge generator would count a bond with one as that month's rent.
+      { fields: { Label: '6B-R6 Sun_Peng* Bond', Tenancy: ['recT1'], Type: 'Bond', 'Due Date': start, Amount: 1500 } },
+    ]);
     expect(roomPatch.bodies).toEqual([{ fields: { Status: 'Occupied' } }]);
     expect(await readSession()).toBeNull();
 
@@ -213,6 +225,7 @@ describe('/movein', () => {
     expect(done).toContain(`https://airtable.com/appTEST/${TENANCIES}/recT1`);
     expect(done).toContain(`https://airtable.com/appTEST/${CHARGES}/recC1`);
     expect(done).toContain(`https://airtable.com/appTEST/${ROOMS}/recR1`);
+    expect(done).toContain(`Bond charge, $1,500.00 due ${start}`);
 
     const markdown = telegram.filter((payload) => payload.parse_mode === 'Markdown').map((p) => String(p.text));
     const withName = markdown.filter((text) => text.includes('Sun\\_Peng\\*'));
@@ -224,7 +237,7 @@ describe('/movein', () => {
 
   it('reuses an existing tenant', async () => {
     const start = futureFirst();
-    const telegram = stubTelegram(12);
+    const telegram = stubTelegram(14);
     await seedSession({ ...BASE_SESSION, step: 'mi_enter_name' });
     mockGet(TENANTS, [{ id: 'recN9', fields: { Name: 'Sun Peng' } }]);
     const tenancyPost = mockWrite('POST', TENANCIES, 'recT1', { Label: '6B-R6 Sun Peng' });
@@ -242,7 +255,9 @@ describe('/movein', () => {
     await telegramUpdate(callbackUpdate(13, 'mi:s:manual'));
     await telegramUpdate(messageUpdate(14, start));
     await telegramUpdate(callbackUpdate(15, 'mi:f:regular'));
+    await telegramUpdate(callbackUpdate(151, 'mi:bond:none'));
     expect(String(lastReply(telegram).text)).toContain('existing');
+    expect(String(lastReply(telegram).text)).toContain('*Bond:* none');
     await telegramUpdate(callbackUpdate(16, confirmButton(telegram, 'mi:confirm')));
 
     expect(tenancyPost.bodies[0].fields.Tenant).toEqual(['recN9']);
@@ -354,7 +369,7 @@ describe('/movein', () => {
   it('part month with the suggested amount', async () => {
     const start = `${addMonths(periodOf(melbourneDateISO()), 3)}-20`;
     const suggested = partMonthAmount(1500, start);
-    const telegram = stubTelegram(6);
+    const telegram = stubTelegram(8);
     await seedSession({ ...BASE_SESSION, step: 'mi_select_first', tenantName: 'Sun Peng', monthlyRent: 1500, startDate: start });
     mockWrite('POST', TENANTS, 'recN1', { Name: 'Sun Peng' });
     const tenancyPost = mockWrite('POST', TENANCIES, 'recT1', { Label: '6B-R6 Sun Peng' });
@@ -365,6 +380,7 @@ describe('/movein', () => {
     expect(buttonData([lastReply(telegram)])).toEqual(['mi:amt:suggested']);
 
     await telegramUpdate(callbackUpdate(41, 'mi:amt:suggested'));
+    await telegramUpdate(callbackUpdate(411, 'mi:bond:none'));
     await telegramUpdate(callbackUpdate(42, confirmButton(telegram, 'mi:confirm')));
 
     expect(tenancyPost.bodies[0].fields['Due Day']).toBe(1);
@@ -382,7 +398,7 @@ describe('/movein', () => {
 
   it('part month with a typed amount', async () => {
     const start = `${addMonths(periodOf(melbourneDateISO()), 3)}-20`;
-    const telegram = stubTelegram(1);
+    const telegram = stubTelegram(3);
     await seedSession({
       ...BASE_SESSION, step: 'mi_enter_first_amount', tenantName: 'Sun Peng', monthlyRent: 1500,
       startDate: start, firstOption: 'part_month',
@@ -391,8 +407,12 @@ describe('/movein', () => {
     await telegramUpdate(messageUpdate(43, '600'));
 
     const session = await readSession();
-    expect(session.step).toBe('mi_confirm');
+    expect(session.step).toBe('mi_enter_bond');
     expect(session.firstAmount).toBe(600);
+    expect(buttonData([lastReply(telegram)])).toEqual(['mi:bond:suggested', 'mi:bond:none']);
+
+    await telegramUpdate(callbackUpdate(431, 'mi:bond:none'));
+    expect((await readSession()).step).toBe('mi_confirm');
     expect(String(lastReply(telegram).text)).toContain(`${periodOf(start)} · ${start} · $600.00`);
   });
 
@@ -400,7 +420,7 @@ describe('/movein', () => {
     // The 20th in both UTC and Melbourne: the generator has already made next month's charges.
     vi.useFakeTimers({ toFake: ['Date'] });
     vi.setSystemTime(new Date('2026-11-20T01:00:00Z'));
-    const telegram = stubTelegram(4);
+    const telegram = stubTelegram(6);
     await seedSession({
       ...BASE_SESSION, step: 'mi_select_first', tenantName: 'Sun Peng', monthlyRent: 1500, startDate: '2026-11-18',
     });
@@ -418,6 +438,7 @@ describe('/movein', () => {
     mockWrite('PATCH', ROOMS, 'recR1', { Code: '6B-R6', Status: 'Occupied' });
 
     await telegramUpdate(callbackUpdate(45, 'mi:f:regular'));
+    await telegramUpdate(callbackUpdate(451, 'mi:bond:none'));
     const confirm = String(lastReply(telegram).text);
     expect(confirm).toContain('2026-11 · 2026-11-18 · $1,500.00');
     expect(confirm).toContain('2026-12 · 2026-12-18 · $1,500.00');
@@ -508,13 +529,14 @@ describe('/movein', () => {
   });
 
   it('occupied room warning', async () => {
-    const telegram = stubTelegram(2);
+    const telegram = stubTelegram(4);
     await seedSession({
       ...BASE_SESSION, roomOccupied: true, step: 'mi_select_first', tenantName: 'Sun Peng',
       monthlyRent: 1500, startDate: futureFirst(),
     });
 
     await telegramUpdate(callbackUpdate(60, 'mi:f:regular'));
+    await telegramUpdate(callbackUpdate(601, 'mi:bond:none'));
 
     const text = String(lastReply(telegram).text);
     expect(text).toContain('⚠️ 6B-R6 is currently Occupied');
@@ -626,11 +648,12 @@ describe('/movein', () => {
     // Shown just before the charge run at 00:00 UTC on the 15th, confirmed just after it.
     vi.useFakeTimers({ toFake: ['Date'] });
     vi.setSystemTime(new Date('2026-11-14T23:59:00Z'));
-    const telegram = stubTelegram(8);
+    const telegram = stubTelegram(10);
     await seedSession({
       ...BASE_SESSION, step: 'mi_select_first', tenantName: 'Sun Peng', monthlyRent: 1500, startDate: '2026-11-18',
     });
     await telegramUpdate(callbackUpdate(104, 'mi:f:regular'));
+    await telegramUpdate(callbackUpdate(1041, 'mi:bond:none'));
     const shown = String(lastReply(telegram).text);
     expect(shown).toContain('2026-11 · 2026-11-18 · $1,500.00');
     expect(shown).not.toContain('2026-12');
@@ -660,6 +683,91 @@ describe('/movein', () => {
 
     expect(chargePost.bodies.map((body) => body.fields.Period)).toEqual(['2026-11', '2026-12']);
     expect(String(lastReply(telegram).text)).toContain('Move-in saved');
+  });
+
+  it('a typed bond amount goes on the confirm screen and is saved', async () => {
+    const start = futureFirst();
+    const telegram = stubTelegram(3);
+    await seedSession({
+      ...BASE_SESSION, step: 'mi_enter_bond', tenantName: 'Sun Peng', monthlyRent: 1500, startDate: start,
+      firstOption: 'regular', firstAmount: 1500,
+    });
+    mockWrite('POST', TENANTS, 'recN1', { Name: 'Sun Peng' });
+    mockWrite('POST', TENANCIES, 'recT1', { Label: '6B-R6 Sun Peng' });
+    const chargePost = mockWrite('POST', CHARGES, 'recC1', { Label: 'x' }, 200, 2);
+    mockWrite('PATCH', ROOMS, 'recR1', { Code: '6B-R6', Status: 'Occupied' });
+
+    await telegramUpdate(messageUpdate(110, '$1,200'));
+    expect((await readSession()).bond).toBe(1200);
+    expect(String(lastReply(telegram).text)).toContain(`• Bond · ${start} · $1,200.00`);
+
+    await telegramUpdate(callbackUpdate(111, confirmButton(telegram, 'mi:confirm')));
+
+    expect(chargePost.bodies.map((body) => body.fields.Type)).toEqual(['Rent', 'Bond']);
+    expect(chargePost.bodies[1].fields.Amount).toBe(1200);
+    expect(String(lastReply(telegram).text)).toContain('Move-in saved');
+  });
+
+  it('a bad bond amount is rejected and the bond step stays', async () => {
+    const telegram = stubTelegram(1);
+    const session = {
+      ...BASE_SESSION, step: 'mi_enter_bond', tenantName: 'Sun Peng', monthlyRent: 1500, startDate: futureFirst(),
+      firstOption: 'regular', firstAmount: 1500,
+    };
+    await seedSession(session);
+
+    await telegramUpdate(messageUpdate(112, 'one month'));
+
+    expect(String(lastReply(telegram).text)).toContain('Invalid amount');
+    expect(await readSession()).toEqual(session);
+  });
+
+  it('No bond saves no Bond charge', async () => {
+    const telegram = stubTelegram(2);
+    await seedSession(confirmSession(futureFirst()));
+    mockWrite('POST', TENANTS, 'recN1', { Name: 'Sun Peng' });
+    mockWrite('POST', TENANCIES, 'recT1', { Label: '6B-R6 Sun Peng' });
+    const chargePost = mockWrite('POST', CHARGES, 'recC1', { Label: 'x' });
+    mockWrite('PATCH', ROOMS, 'recR1', { Code: '6B-R6', Status: 'Occupied' });
+
+    await telegramUpdate(callbackUpdate(113, CONFIRM));
+
+    expect(chargePost.bodies.map((body) => body.fields.Type)).toEqual(['Rent']);
+    expect(String(lastReply(telegram).text)).not.toContain('Bond');
+  });
+
+  it('a failed bond write comes last and leaves the rest of the move-in done', async () => {
+    // For example, the Charges Type field has no "Bond" option yet.
+    vi.spyOn(console, 'error').mockImplementation(() => {});
+    const start = futureFirst();
+    const telegram = stubTelegram(2);
+    await seedSession({ ...confirmSession(start), bond: 1500 });
+    mockWrite('POST', TENANTS, 'recN1', { Name: 'Sun Peng' });
+    mockWrite('POST', TENANCIES, 'recT1', { Label: '6B-R6 Sun Peng' });
+    mockWrite('POST', CHARGES, 'recC1', { Label: 'x' });
+    const roomPatch = mockWrite('PATCH', ROOMS, 'recR1', { Code: '6B-R6', Status: 'Occupied' });
+    mockWrite('POST', CHARGES, 'recC2', {}, 422);
+
+    await telegramUpdate(callbackUpdate(114, CONFIRM));
+
+    expect(roomPatch.calls).toBe(1);
+    const text = String(lastReply(telegram).text);
+    expect(text).toContain('Move-in not finished');
+    expect(text).toContain(`https://airtable.com/appTEST/${ROOMS}/recR1`);
+    expect(text).toContain(`Could not create the bond charge, $1,500.00 due ${start} (HTTP 422)`);
+    expect(text).toContain('Still to do in Airtable');
+    expect(await readSession()).toBeNull();
+  });
+
+  it('a confirm screen saved before the bond step existed has expired', async () => {
+    const telegram = stubTelegram(2);
+    const old = confirmSession(futureFirst()) as Record<string, unknown>;
+    delete old.bond;
+    await seedSession(old);
+
+    await telegramUpdate(callbackUpdate(115, CONFIRM));
+
+    expect(String(lastReply(telegram).text)).toContain('expired');
   });
 
   it('stale confirm during /pay writes nothing', async () => {

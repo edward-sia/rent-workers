@@ -1,5 +1,7 @@
 import { describe, expect, it } from 'vitest';
+import { addDaysISO } from '../src/dates';
 import {
+  MAX_MOVE_IN_RENT_CHARGES,
   checkStartDate,
   dueDayFor,
   generatedThrough,
@@ -105,5 +107,24 @@ describe('planMoveInCharges', () => {
       { period: '2027-02', dueDate: '2027-02-28', amount: 1500 },
       { period: '2027-03', dueDate: '2027-03-28', amount: 1500 },
     ]);
+  });
+});
+
+describe('MAX_MOVE_IN_RENT_CHARGES', () => {
+  it('is the most rent charges any allowed start date can give', () => {
+    let most = 0;
+    // Every day of a year as "today", and every start date from 60 days back to 90 days ahead.
+    for (let day = 0; day < 366; day += 1) {
+      const today = addDaysISO('2026-01-01', day);
+      for (let offset = -60; offset <= 90; offset += 1) {
+        const startDate = addDaysISO(today, offset);
+        if (checkStartDate(startDate, today) !== null) continue;
+        for (const option of ['regular', 'part_month'] as const) {
+          const plan = planMoveInCharges({ startDate, monthlyRent: 1500, option, firstAmount: 1500, todayUtc: today });
+          most = Math.max(most, plan.length);
+        }
+      }
+    }
+    expect(most).toBe(MAX_MOVE_IN_RENT_CHARGES);
   });
 });

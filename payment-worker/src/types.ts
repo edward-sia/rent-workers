@@ -33,6 +33,7 @@ export type WizardStep =
   | 'mi_enter_start'
   | 'mi_select_first'
   | 'mi_enter_first_amount'
+  | 'mi_enter_bond'
   | 'mi_confirm'
   | 'saving';
 
@@ -76,6 +77,7 @@ export interface WizardSession {
   monthlyRent?: number;
   firstOption?: FirstPaymentOption;
   firstAmount?: number;
+  bond?: number;            // 0 means no bond
   plannedCharges?: PlannedCharge[]; // the charges the confirm screen showed
 
   // list picks, keyed by the short id used in callback data

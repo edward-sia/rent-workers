@@ -4,3 +4,4 @@ export * from './rent-charge';
 export * from './charge-window';
 export * from './move-in';
 export * from './move-out';
+export * from './bond';

@@ -5,6 +5,7 @@ import {
   endOfMonthISO,
   partMonthAmount,
   periodOf,
+  suggestedBond,
   tenancyLabel,
   type FirstPaymentOption,
   type PlannedCharge,
@@ -26,6 +27,8 @@ export interface MoveIn {
   startDate: string;
   firstOption: FirstPaymentOption;
   firstAmount: number;
+  /** 0 means no bond. */
+  bond: number;
 }
 
 /** A Markdown link with fixed link text. Telegram does not allow escapes inside link text. */
@@ -106,6 +109,18 @@ export function partAmountPrompt(startDate: string, monthlyRent: number): Prompt
   };
 }
 
+/** The bond is due on the start date. The suggestion is one month of rent. */
+export function bondPrompt(startDate: string, monthlyRent: number): Prompt {
+  const suggested = formatAUD(suggestedBond(monthlyRent));
+  return {
+    text:
+      `🔒 *Bond*, due ${esc(startDate)}.\n` +
+      `Suggested: ${esc(suggested)} (one month of rent).\n\n` +
+      'Tap the suggestion, type a different amount, or tap No bond:',
+    keyboard: new InlineKeyboard().text(`Use ${suggested}`, 'mi:bond:suggested').text('No bond', 'mi:bond:none'),
+  };
+}
+
 /** `notice` is Markdown shown above the summary, like why the screen was shown again. */
 export function confirmPrompt(
   env: Env,
@@ -146,6 +161,11 @@ function confirmText(env: Env, moveIn: MoveIn, plan: PlannedCharge[]): string {
   );
   for (const charge of plan) {
     lines.push(`• ${esc(charge.period)} · ${esc(charge.dueDate)} · ${esc(formatAUD(charge.amount))}`);
+  }
+  if (moveIn.bond > 0) {
+    lines.push(`• Bond · ${esc(moveIn.startDate)} · ${esc(formatAUD(moveIn.bond))}`);
+  } else {
+    lines.push('', '🔒 *Bond:* none');
   }
   lines.push('', `🚪 Room ${code} will be marked *Occupied*.`);
   return lines.join('\n');
