@@ -8,11 +8,13 @@ import {
   TenantSchema,
 } from '@rent/airtable-client';
 import {
+  buildBondCharge,
   buildRentCharge,
   checkStartDate,
   dueDayFor,
   partMonthAmount,
   planMoveInCharges,
+  suggestedBond,
   tenancyLabel,
   type FirstPaymentOption,
   type PlannedCharge,
@@ -30,6 +32,7 @@ import {
   parseDate,
 } from './format';
 import {
+  bondPrompt,
   capitalize,
   confirmPrompt,
   existingTenantPrompt,
@@ -87,12 +90,14 @@ function roomChoice(room: Room): SessionChoice {
 }
 
 function moveInOf(session: WizardSession): MoveIn | null {
-  const { roomId, roomCode, tenantName, monthlyRent, startDate, firstOption, firstAmount } = session;
+  const { roomId, roomCode, tenantName, monthlyRent, startDate, firstOption, firstAmount, bond } = session;
   if (!roomId || !roomCode || !tenantName || !monthlyRent || !startDate || !firstOption || !firstAmount) {
     return null;
   }
+  // A session saved before the bond step existed has no bond. It must not save without one.
+  if (typeof bond !== 'number' || bond < 0) return null;
   return {
-    roomId, roomCode, tenantName, monthlyRent, startDate, firstOption, firstAmount,
+    roomId, roomCode, tenantName, monthlyRent, startDate, firstOption, firstAmount, bond,
     roomOccupied: session.roomOccupied === true,
     tenantId: session.tenantId,
     tenantNotes: session.tenantNotes,
@@ -124,6 +129,15 @@ const askFirst = (ctx: Context, env: Env, session: WizardSession, startDate: str
     firstPaymentPrompt(startDate, Number(session.monthlyRent)),
   );
 
+/** After the first payment is settled, ask about the bond. */
+const askBond = (
+  ctx: Context, env: Env, session: WizardSession, firstOption: FirstPaymentOption, firstAmount: number,
+): Promise<void> =>
+  ask(
+    ctx, env, { ...session, step: 'mi_enter_bond', firstOption, firstAmount },
+    bondPrompt(String(session.startDate), Number(session.monthlyRent)),
+  );
+
 /** Same charges, in the same order. */
 function samePlan(a: PlannedCharge[], b: PlannedCharge[] | undefined): boolean {
   return JSON.stringify(a) === JSON.stringify(b);
@@ -133,16 +147,9 @@ function samePlan(a: PlannedCharge[], b: PlannedCharge[] | undefined): boolean {
  * Show the confirm screen with a new operation ID. The session keeps the charges shown,
  * so Confirm can tell when they would no longer match what gets saved.
  */
-async function showConfirm(
-  ctx: Context,
-  env: Env,
-  session: WizardSession,
-  firstOption: FirstPaymentOption,
-  firstAmount: number,
-  notice?: string,
-): Promise<void> {
+async function showConfirm(ctx: Context, env: Env, session: WizardSession, notice?: string): Promise<void> {
   const opId = newOpId();
-  const updated: WizardSession = { ...session, step: 'mi_confirm', firstOption, firstAmount, opId };
+  const updated: WizardSession = { ...session, step: 'mi_confirm', opId };
   const moveIn = moveInOf(updated);
   if (!moveIn) {
     await clearSession(ctx.from!.id, env.SESSION_KV);
@@ -244,6 +251,22 @@ async function saveMoveIn(ctx: Context, env: Env, moveIn: MoveIn, plan: PlannedC
       return `🚪 Room ${code} marked Occupied: ${link(env, TABLES.ROOMS, moveIn.roomId, 'Open')}`;
     },
   });
+  // Last, so a failed bond write still leaves the tenancy, its rent and the room done.
+  if (moveIn.bond > 0) {
+    const summary = `bond charge, ${esc(formatAUD(moveIn.bond))} due ${esc(moveIn.startDate)}`;
+    steps.push({
+      todo: `create the ${summary}`,
+      check: link(env, TABLES.CHARGES, null, 'Charges table'),
+      action: 'create Charges',
+      run: async () => {
+        const fields = buildBondCharge({
+          tenancyId, tenancyLabel: label, dueDate: moveIn.startDate, amount: moveIn.bond,
+        });
+        const created = await airtable.create(TABLES.CHARGES, ChargeSchema, fields);
+        return `🔒 ${capitalize(summary)}: ${link(env, TABLES.CHARGES, created.id, 'Open')}`;
+      },
+    });
+  }
 
   for (const [index, step] of steps.entries()) {
     try {
@@ -390,7 +413,7 @@ export function registerMoveIn(bot: Bot, env: Env): void {
     const startDate = String(session.startDate);
     const monthlyRent = Number(session.monthlyRent);
     if (ctx.match[1] === 'regular') {
-      await showConfirm(ctx, env, session, 'regular', monthlyRent);
+      await askBond(ctx, env, session, 'regular', monthlyRent);
       return;
     }
     // A part-month button from an older message, after a start on the 1st was picked.
@@ -409,7 +432,15 @@ export function registerMoveIn(bot: Bot, env: Env): void {
     const session = await sessionAt(ctx, env, 'mi_enter_first_amount');
     if (!session) return;
     const amount = partMonthAmount(Number(session.monthlyRent), String(session.startDate));
-    await showConfirm(ctx, env, session, 'part_month', amount);
+    await askBond(ctx, env, session, 'part_month', amount);
+  });
+
+  bot.callbackQuery(/^mi:bond:(suggested|none)$/, async (ctx) => {
+    await ctx.answerCallbackQuery();
+    const session = await sessionAt(ctx, env, 'mi_enter_bond');
+    if (!session) return;
+    const bond = ctx.match[1] === 'none' ? 0 : suggestedBond(Number(session.monthlyRent));
+    await showConfirm(ctx, env, { ...session, bond });
   });
 
   bot.callbackQuery(confirmPattern('mi:confirm'), async (ctx) => {
@@ -433,7 +464,7 @@ export function registerMoveIn(bot: Bot, env: Env): void {
     // The charges depend on today's UTC date. Show the screen again if they changed.
     const plan = planFor(moveIn);
     if (!samePlan(plan, session.plannedCharges)) {
-      await showConfirm(ctx, env, session, moveIn.firstOption, moveIn.firstAmount, PLAN_CHANGED);
+      await showConfirm(ctx, env, session, PLAN_CHANGED);
       return;
     }
 
@@ -473,14 +504,17 @@ export async function handleMoveInText(
       await askRent(ctx, env, { ...session, tenantNotes: text });
       return true;
     case 'mi_enter_rent':
-    case 'mi_enter_first_amount': {
+    case 'mi_enter_first_amount':
+    case 'mi_enter_bond': {
       const amount = parseAmount(text);
       if (amount === null) {
         await ctx.reply('❌ Invalid amount. Enter a number like `1650` or `1650.00`', MARKDOWN);
       } else if (session.step === 'mi_enter_rent') {
         await askStart(ctx, env, session, amount);
+      } else if (session.step === 'mi_enter_first_amount') {
+        await askBond(ctx, env, session, 'part_month', amount);
       } else {
-        await showConfirm(ctx, env, session, 'part_month', amount);
+        await showConfirm(ctx, env, { ...session, bond: amount });
       }
       return true;
     }

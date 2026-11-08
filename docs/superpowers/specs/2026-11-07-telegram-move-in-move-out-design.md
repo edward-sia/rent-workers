@@ -46,7 +46,7 @@ Section 9 lists the call and record cost of each flow.
 1. Two commands: `/moveout` and `/movein`. When a move-out finishes, the bot offers a button to start a new tenant in the same room.
 2. At move-in you choose how the first charge works (section 4.3).
 3. No charge is ever created with a due date after `End Date`. Charges that already exist after the end date are listed at move-out, and you fix them in Airtable.
-4. Bond is out of scope.
+4. ~~Bond is out of scope.~~ Changed on 2026-11-09: `/movein` records the bond as a Bond charge (section 4.6). Refunds at move-out stay manual.
 5. If a tenant is added after the 15th, the bot also creates next month's charge, because the generator has already run.
 6. The suggested part-month amount is `Monthly Rent × 12 ÷ 365` per day, times the days left in the start month. You can type a different amount.
 7. The bot updates Rooms `Status`.
@@ -87,7 +87,8 @@ The charges read in step 4 uses one call: `OR(NOT({Status} = "Paid"), IS_AFTER({
 4. **Monthly rent.** Tap **Use ${Default Rent}**, or type an amount.
 5. **Start date.** **Today**, **1st of next month**, or **Enter date**.
 6. **First payment.** Pick one (section 4.3).
-7. **Confirm screen** lists everything that will be written, including each charge's period, due date and amount. If the room's `Status` is `Occupied`, the screen shows a warning first.
+7. **Bond.** Tap the suggestion (one month of rent), type an amount, or tap **No bond** (section 4.6).
+8. **Confirm screen** lists everything that will be written, including each charge's period, due date and amount. If the room's `Status` is `Occupied`, the screen shows a warning first.
 
 ### 4.2 Writes on Confirm, in order
 
@@ -95,6 +96,7 @@ The charges read in step 4 uses one call: `OR(NOT({Status} = "Paid"), IS_AFTER({
 2. Create the Tenancies record: `Label`, `Room`, `Tenant`, `Start Date`, `Due Day`, `Monthly Rent`, `Frequency: "Monthly"`.
 3. Create the charges from section 4.4.
 4. PATCH the room's `Status` to `Occupied`.
+5. Create the Bond charge, when there is a bond. It goes last so a failure leaves the rest of the move-in done.
 
 There is no rollback. If a step fails, the reply says which steps succeeded, links the records that were created, and names the step to finish in Airtable. Failure messages show the HTTP status only, never raw Airtable response bodies.
 
@@ -140,6 +142,17 @@ Start dates more than 60 days in the past are rejected, so a typo cannot create 
 ### 4.5 Shared charge rules
 
 The label (`{Label} {YYYY-MM} Rent`), `Type: "Rent"`, `Period` and `resolveDueDate` rules currently live in `charge-generator`. They move into the new `@rent/tenancy` package (section 7), so both Workers build regular charges the same way.
+
+### 4.6 Bond
+
+Added on 2026-11-09, after the first production move-in showed no bond.
+
+- The bond is a Charges record: `Label` = `{tenancy label} Bond`, `Tenancy`, `Type` = `Bond`, `Due Date` = the start date, `Amount`. It has no `Period`, because the charge generator treats any charge with next month's `Period` as that month's rent and would skip the tenancy.
+- The bot suggests one month of rent. The operator can type another amount or choose no bond. The confirm screen shows the bond.
+- Being a charge, it shows in `/reminder` and the tenant pays it with `/pay`.
+- The Charges `Type` single select needs a `Bond` option. The schema check reports it when missing.
+- A confirm screen saved before this change has no bond in its session, so its Confirm replies "expired".
+- Bond refunds and deductions at move-out are out of scope and stay manual.
 
 ---
 
@@ -255,7 +268,7 @@ The `saving` step stays, so Cancel and typed text still see that a save is runni
 | Action | Airtable API calls | New records |
 |---|---|---|
 | `/moveout` | 4: list tenancies, read charges, PATCH tenancy, PATCH room | 0 |
-| `/movein` | 5–7: list rooms, match name, create tenant, create tenancy, 1–2 charges, PATCH room | 2–4 |
+| `/movein` | 5–8: list rooms, match name, create tenant, create tenancy, 1–2 rent charges, PATCH room, bond charge | 2–5 |
 | `/pay` (today, for comparison) | about 5 | 1 |
 
 Move-ins and move-outs are rare, so the monthly call limit is not at risk. Charges the bot creates would mostly have been created by the generator anyway.

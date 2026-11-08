@@ -58,9 +58,11 @@ const REQUIRED_FIELDS = {
   },
 } as const satisfies Record<string, Record<string, readonly string[]>>;
 
+// Options the workers write. A single select rejects a value it has no option for.
 const REQUIRED_CHOICES: Record<string, Record<string, readonly string[]>> = {
   [TABLES.ROOMS]: { Status: ['Occupied', 'Vacant'] },
   [TABLES.TENANCIES]: { Frequency: ['Monthly'] },
+  [TABLES.CHARGES]: { Type: ['Rent', 'Bond'] },
 };
 
 function isAirtableField(value: unknown): value is AirtableField {
@@ -142,8 +144,9 @@ function findSchemaDrift(tables: AirtableTable[]): string[] {
         );
       }
 
+      // A text field takes any value, so only a single select needs its options checked.
       const requiredChoices = REQUIRED_CHOICES[tableId]?.[fieldName];
-      if (requiredChoices) {
+      if (requiredChoices && field.type === 'singleSelect') {
         const present = new Set((field.options?.choices ?? []).map((choice) => choice.name));
         for (const choice of requiredChoices) {
           if (!present.has(choice)) {

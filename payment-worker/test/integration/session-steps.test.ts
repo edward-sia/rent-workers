@@ -37,7 +37,7 @@ const MOVE_IN_START = '2027-01-01';
 const MOVE_IN_CONFIRM = {
   flow: 'movein', step: 'mi_confirm', roomId: 'recR1', roomCode: '6B-R6', roomOccupied: false,
   defaultRent: 1500, tenantName: 'Sun Peng', monthlyRent: 1500, startDate: MOVE_IN_START,
-  firstOption: 'regular', firstAmount: 1500, opId: OP_ID,
+  firstOption: 'regular', firstAmount: 1500, bond: 0, opId: OP_ID,
 };
 
 const MOVE_OUT_CONFIRM = {

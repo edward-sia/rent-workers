@@ -3,7 +3,7 @@
 This Worker owns the Telegram payment bot.
 
 - `/pay` records tenant payments through the wizard and writes Payment records to Airtable. It lists active tenancies plus ended ones that still owe money.
-- `/movein` (`src/movein.ts`, prompts in `src/movein-view.ts`) creates a Tenant (unless one is reused), a Tenancy, the first Charges, then sets the Room to Occupied. It writes in that order with no rollback.
+- `/movein` (`src/movein.ts`, prompts in `src/movein-view.ts`) creates a Tenant (unless one is reused), a Tenancy, the first rent Charges, sets the Room to Occupied, then creates the Bond charge when there is one. It writes in that order with no rollback. The Bond charge (`buildBondCharge` in `@rent/tenancy`) must not get a `Period`: the charge generator treats any charge with next month's `Period` as that month's rent.
 - `/moveout` (`src/moveout.ts`) sets the tenancy `End Date`. It sets the Room to Vacant only when the end date is today (Melbourne) or earlier.
 - Callback data prefixes: `mi:` for move-in, `mo:` for move-out. `/pay` keeps its own unprefixed callbacks.
 - Every confirm screen gets an operation ID from `newOpId()` (`src/confirm.ts`). Store it in the session as `opId` and put it in the Confirm button with `confirmData(prefix, opId)`. Match the button with `confirmPattern(prefix)`, and refuse it when its ID doesn't match the session's.

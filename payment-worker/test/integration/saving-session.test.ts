@@ -67,7 +67,7 @@ const SAVING = [
     session: {
       flow: 'movein', step: 'saving', opId: OP_ID, roomId: 'recR1', roomCode: '6B-R6', roomOccupied: false,
       defaultRent: 1500, tenantName: 'Sun Peng', monthlyRent: 1500, startDate: '2027-01-01',
-      firstOption: 'regular', firstAmount: 1500,
+      firstOption: 'regular', firstAmount: 1500, bond: 1500,
     },
   },
   {
@@ -85,7 +85,8 @@ const BUTTONS = [
   'charge:recC1', 'method:Cash', 'method:Bank Transfer', 'date:2026-05-01', 'date:manual', 'back:pay',
   `confirm:yes:${OP_ID}`, 'confirm:no',
   'mi:tenant:existing', 'mi:tenant:new', 'mi:notes:skip', 'mi:rent:default', 'mi:s:today', 'mi:s:next1',
-  'mi:s:manual', 'mi:f:regular', 'mi:f:part', 'mi:amt:suggested', `mi:confirm:${OP_ID}`, 'mi:cancel',
+  'mi:s:manual', 'mi:f:regular', 'mi:f:part', 'mi:amt:suggested', 'mi:bond:suggested', 'mi:bond:none',
+  `mi:confirm:${OP_ID}`, 'mi:cancel',
   'mo:t:recT1', 'mo:d:today', 'mo:d:eom', 'mo:d:manual', `mo:confirm:${OP_ID}`, 'mo:cancel',
 ];
 const TEXTS = ['1650', '2026-05-01', 'Sun Peng'];
