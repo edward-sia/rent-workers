@@ -7,6 +7,9 @@ export const TenancySchema = z.object({
   'End Date':     z.string().optional(),
   'Due Day':      z.number().int().min(1).max(28).optional(),
   Balance:        z.number().optional(),
+  Room:           z.array(z.string()).optional(),
+  Tenant:         z.array(z.string()).optional(),
+  Frequency:      z.string().optional(),
 });
 export type Tenancy = z.infer<typeof TenancySchema>;
 
@@ -31,3 +34,16 @@ export const PaymentSchema = z.object({
   Notes:       z.string().optional(),
 });
 export type Payment = z.infer<typeof PaymentSchema>;
+
+export const RoomSchema = z.object({
+  Code:           z.string(),
+  'Default Rent': z.number().optional(),
+  Status:         z.string().optional(),
+});
+export type Room = z.infer<typeof RoomSchema>;
+
+export const TenantSchema = z.object({
+  Name:  z.string(),
+  Notes: z.string().optional(),
+});
+export type Tenant = z.infer<typeof TenantSchema>;

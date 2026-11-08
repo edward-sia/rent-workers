@@ -12,6 +12,7 @@ export default defineWorkersProject({
           compatibilityDate: '2026-04-26',
           compatibilityFlags: ['nodejs_compat'],
           kvNamespaces: ['SESSION_KV'],
+          durableObjects: { CONFIRM_LOCK: 'ConfirmLock' },
           bindings: {
             TELEGRAM_BOT_TOKEN: 'test:bot:token',
             TELEGRAM_WEBHOOK_SECRET: 'a'.repeat(32),

@@ -21,6 +21,16 @@ AIRTABLE_BASE_ID = "app6He8xRaUzNBTDl"
 binding = "SESSION_KV"
 id = "220ffe76ec364d6eaf8726ed01e6495b"
 
+# One ConfirmLock per Telegram user. It lets only one Confirm tap per operation write
+# to Airtable. SQLite storage is the only kind the Workers Free plan allows.
+[[durable_objects.bindings]]
+name = "CONFIRM_LOCK"
+class_name = "ConfirmLock"
+
+[[migrations]]
+tag = "v1"
+new_sqlite_classes = ["ConfirmLock"]
+
 [env.staging]
 name = "payment-bot-staging"
 
@@ -30,3 +40,8 @@ AIRTABLE_BASE_ID = "appzRYFa1yW5pQDEW"
 [[env.staging.kv_namespaces]]
 binding = "SESSION_KV"
 id = "17e24003884e454dbd96d81acc37bf2d"
+
+# Bindings aren't inherited by environments. The migration above is.
+[[env.staging.durable_objects.bindings]]
+name = "CONFIRM_LOCK"
+class_name = "ConfirmLock"

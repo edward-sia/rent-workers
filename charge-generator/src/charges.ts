@@ -7,8 +7,8 @@ import {
   type Tenancy,
   TenancySchema,
 } from '@rent/airtable-client';
+import { buildRentCharge, isWithinTenancy, resolveDueDate } from '@rent/tenancy';
 import { notifyDiscord } from './discord';
-import { resolveDueDate } from './due-date';
 
 export interface ChargesEnv {
   AIRTABLE_TOKEN: string;
@@ -48,7 +48,7 @@ export async function generateCharges(env: ChargesEnv, now = new Date()): Promis
     const reason = summarizeAirtableFailure(e);
     const msg = `Airtable read failed${reason ? ` (${reason})` : ''}`;
     console.error(`[${period}] ${msg}`);
-    await notifyDiscord(env.DISCORD_WEBHOOK_URL, period, [], [], [msg]);
+    await notifyDiscord(env.DISCORD_WEBHOOK_URL, period, { created: [], existed: [], outside: [], errors: [msg] });
     throw new Error(msg);
   }
 
@@ -58,29 +58,38 @@ export async function generateCharges(env: ChargesEnv, now = new Date()): Promis
   }
 
   const created: string[] = [];
-  const skipped: string[] = [];
+  const existed: string[] = [];
+  const outside: string[] = [];
   const errors: string[] = [];
 
   for (const tenancy of tenancies) {
     const label = tenancy.fields.Label;
 
     if (alreadyCovered.has(tenancy.id)) {
-      skipped.push(`tenancy ${tenancy.id}`);
+      existed.push(`tenancy ${tenancy.id}`);
       continue;
     }
 
     const rent = tenancy.fields['Monthly Rent'] ?? 0;
     const dueDate = resolveDueDate(tenancy.fields, year, month);
 
+    if (!isWithinTenancy(dueDate, tenancy.fields)) {
+      outside.push(`tenancy ${tenancy.id}`);
+      continue;
+    }
+
     try {
-      const charge = await client.create(TABLES.CHARGES, ChargeSchema, {
-        Label: `${label} ${period} Rent`,
-        Tenancy: [tenancy.id],
-        Type: 'Rent',
-        Period: period,
-        'Due Date': dueDate,
-        Amount: rent,
-      });
+      const charge = await client.create(
+        TABLES.CHARGES,
+        ChargeSchema,
+        buildRentCharge({
+          tenancyId: tenancy.id,
+          tenancyLabel: label,
+          period,
+          dueDate,
+          amount: rent,
+        }),
+      );
       created.push(`tenancy ${tenancy.id} → charge ${charge.id} due ${dueDate}`);
     } catch (e) {
       const reason = summarizeAirtableFailure(e);
@@ -92,19 +101,14 @@ export async function generateCharges(env: ChargesEnv, now = new Date()): Promis
     }
   }
 
-  const discordOk = await notifyDiscord(
-    env.DISCORD_WEBHOOK_URL,
-    period,
-    created,
-    skipped,
-    errors,
-  );
+  const discordOk = await notifyDiscord(env.DISCORD_WEBHOOK_URL, period, { created, existed, outside, errors });
 
   if (errors.length > 0) {
     console.error(`[${period}] ERRORS:\n${errors.join('\n')}`);
   }
   console.log(
-    `[${period}] created=${created.length} skipped=${skipped.length} errors=${errors.length} discord=${discordOk}`,
+    `[${period}] created=${created.length} skipped=${existed.length} outside=${outside.length} ` +
+      `errors=${errors.length} discord=${discordOk}`,
   );
 }
 

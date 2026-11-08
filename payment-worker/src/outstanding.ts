@@ -1,5 +1,4 @@
 import {
-  AirtableClient,
   type AirtableRecord,
   type Charge,
   ChargeSchema,
@@ -7,9 +6,10 @@ import {
   type Tenancy,
   TenancySchema,
 } from '@rent/airtable-client';
+import { addDaysISO } from '@rent/tenancy';
+import { airtableFor } from './airtable';
+import { melbourneDateISO } from './format';
 import type { Env } from './types';
-
-const RENT_TIME_ZONE = 'Australia/Melbourne';
 
 export type ReminderBucket = 'pay_now' | 'due_soon';
 
@@ -48,10 +48,10 @@ export interface BucketOutstandingChargesInput {
 
 export async function fetchReminderBuckets(
   env: Env,
-  today = todayISO(),
+  today = melbourneDateISO(),
   horizonDays = 14,
 ): Promise<ReminderBuckets> {
-  const airtable = new AirtableClient(env);
+  const airtable = airtableFor(env);
   const [tenancies, charges] = await Promise.all([
     airtable.fetchAll(TABLES.TENANCIES, TenancySchema, {
       fields: ['Label'],
@@ -170,27 +170,7 @@ function sumBalances(charges: ReminderCharge[]): number {
   return charges.reduce((total, charge) => total + charge.balance, 0);
 }
 
-function addDaysISO(value: string, days: number): string {
-  const date = new Date(`${value}T00:00:00Z`);
-  date.setUTCDate(date.getUTCDate() + days);
-  return date.toISOString().slice(0, 10);
-}
-
 function isISODate(value: unknown): value is string {
   if (typeof value !== 'string' || !/^\d{4}-\d{2}-\d{2}$/.test(value)) return false;
   return new Date(`${value}T00:00:00Z`).toISOString().slice(0, 10) === value;
-}
-
-function todayISO(): string {
-  const parts = new Intl.DateTimeFormat('en-AU', {
-    timeZone: RENT_TIME_ZONE,
-    year: 'numeric',
-    month: '2-digit',
-    day: '2-digit',
-  }).formatToParts(new Date());
-  const year = parts.find((part) => part.type === 'year')?.value;
-  const month = parts.find((part) => part.type === 'month')?.value;
-  const day = parts.find((part) => part.type === 'day')?.value;
-  if (!year || !month || !day) throw new Error('Unable to resolve current rent date');
-  return `${year}-${month}-${day}`;
 }

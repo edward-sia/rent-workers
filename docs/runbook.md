@@ -12,7 +12,7 @@ Check:
 2. Environment secrets exist: `CLOUDFLARE_API_TOKEN`, `CLOUDFLARE_ACCOUNT_ID`, `STAGING_TELEGRAM_BOT_TOKEN`, `STAGING_TELEGRAM_WEBHOOK_SECRET`.
 3. Environment variables exist: `STAGING_CHARGE_GENERATOR_URL`, `STAGING_PAYMENT_BOT_URL`.
 4. Cloudflare staging Worker secrets exist for both Workers. See `docs/staging-cicd.md`.
-5. `payment-worker/wrangler.toml` still points staging `SESSION_KV` to `17e24003884e454dbd96d81acc37bf2d`.
+5. `payment-worker/wrangler.toml` still points staging `SESSION_KV` to `17e24003884e454dbd96d81acc37bf2d`, and declares the `CONFIRM_LOCK` Durable Object binding under `env.staging`.
 6. `charge-generator/wrangler.jsonc` and `payment-worker/wrangler.toml` still point staging `AIRTABLE_BASE_ID` to `appzRYFa1yW5pQDEW`.
 
 Local config check:
@@ -81,6 +81,8 @@ If the smoke test logs show `Expected JSON` with an HTML body or a 302 login res
 
 Manual reruns are idempotent. Existing charges for the same tenancy and period are skipped.
 
+The generator also skips a tenancy when the period's due date is before its `Start Date` or after its `End Date`. The Discord summary lists these as `tenancy <id>` under their own "⏭ Skipped: outside tenancy dates" heading. "Already existed" lists only tenancies that already had a charge for the period. The log line counts them as `outside=<n>`. That is expected for a tenancy that has ended or has not started. If a tenancy that should get a charge shows up there, check its `Start Date`, `End Date` and `Due Day`.
+
 ## Manual `/run` returns 401
 
 `/run` now fails closed unless the request includes a valid bearer token.
@@ -146,7 +148,7 @@ Common causes:
 | `HTTP 401` | Airtable PAT expired, revoked, or missing scope | Rotate `AIRTABLE_TOKEN` with `wrangler secret put AIRTABLE_TOKEN` |
 | `HTTP 422` | Airtable field/schema mismatch | Compare `packages/airtable-client/src/schemas.ts` with the Airtable base |
 | `Airtable schema mismatch` | Field changed type/name or response shape changed | Update the shared schema and worker code together |
-| Repeated 5xx/network errors | Airtable transient outage or network issue | Retry later; client already retries 5xx/network failures twice |
+| Repeated 5xx/network errors | Airtable transient outage or network issue | Retry later. The client already retries reads (GET) and updates (PATCH) twice. It sends creates (POST) once, so a failed create may still have saved: check for the record before you create it again |
 
 ## Airtable schema-check failed
 
@@ -157,6 +159,8 @@ Check:
 1. The workflow or local command has `AIRTABLE_TOKEN` and `AIRTABLE_BASE_ID`.
 2. The Airtable PAT can read the base metadata/records needed by `scripts/check-airtable-schema.ts`.
 3. The output diff for renamed, deleted, or type-changed fields.
+
+The check covers Tenancies, Charges, Payments, Rooms and Tenants fields. It also checks that Rooms `Status` has the select options `Occupied` and `Vacant`, and that Tenancies `Frequency` has the option `Monthly`. If someone renames one of those options in Airtable, `/movein` and `/moveout` would fail to write, so this check fails first.
 
 Fix:
 
@@ -221,6 +225,91 @@ Check:
 5. `AIRTABLE_TOKEN` can read both Charges and Tenancies.
 
 If Airtable field names or status values changed, update `packages/airtable-client/src/schemas.ts`, the schema check script, tests, and this runbook together.
+
+## `/pay` does not list a tenant
+
+`/pay` lists tenancies with no `End Date`, tenancies whose `End Date` is after today, and ended tenancies that still have a positive `Balance`. "Today" here is Airtable's `TODAY()` in the filter formula, not the Melbourne date. A tenant who moved out and still owes money stays in the list until the balance is paid. If a tenancy is missing, check its `End Date` and `Balance` in Airtable.
+
+## `/moveout` and `/movein`: how they work
+
+Both commands only write to Airtable after you tap Confirm. The date buttons, the move-in start-date check and the move-out Vacant decision use the Melbourne date for "today". The `/moveout` tenancy list is different: Airtable filters it with its own `TODAY()`, so near midnight it can be a day off from the Melbourne date. Both reply to errors with an HTTP status and a link, never with the Airtable response body. Worker logs name the failed call and give the same status, for example `[payment-bot] movein failed: create Tenancies: HTTP 422`. Logs never include the response body either.
+
+If tapping Confirm or Cancel replies that the payment, move-out or move-in is "already being saved, or the save has finished", that operation's first Confirm got the save. It is still running, or it stopped partway. Wait a minute, then check Airtable for what was written before you start the command again. Two taps can't both save. The `ConfirmLock` Durable Object gives each confirm screen's save to one tap only.
+
+If Confirm, or a button from an earlier step, replies that the operation "was already saved or has expired" (for `/pay`: "Session expired"), the button belongs to an older screen. Examples are a move-in you cancelled, or a screen from before the bot was last deployed. Nothing was written. Use the newest confirm screen, or start the command again.
+
+If `/movein` shows the confirm screen again with "The charges changed since you saw this screen", the monthly charge run (00:00 UTC on the 15th) happened after the screen was shown. Next month's charge is now added. Nothing was saved. Check the new list and confirm again.
+
+If Confirm sends "Could not start the save. Nothing was written.", the bot couldn't reach its `ConfirmLock` Durable Object. The confirm screen above that message stays as it was. Tap its Confirm again. If it keeps happening, look for `claim Confirm` in the Worker logs.
+
+### `/moveout`
+
+1. `/moveout` lists tenancies with no `End Date` or an `End Date` after Airtable's `TODAY()`.
+2. Pick one, then pick the end date: Today, End of this month, or type a date. The end date cannot be before the tenancy `Start Date`.
+3. The confirm screen shows the amount owed through the end date and what will happen to the room.
+4. If any charge is due after the end date, the confirm screen lists it with its status and a link. The bot does not change these charges. See "Fixing charges due after an end date" below.
+5. Confirm sets the tenancy `End Date`. It sets the room `Status` to `Vacant` only when the end date is today or earlier. For a later end date the room stays `Occupied`. When that day comes, set the room to `Vacant` in Airtable yourself.
+6. The reply has a "Start new tenant in {room}" button that begins `/movein` with that room chosen.
+
+If the reply says "Move-out may have saved", open the tenancy link and check whether `End Date` is set before you run `/moveout` again. If the reply says the end date saved but the room was not updated, set the room to `Vacant` in Airtable.
+
+### `/movein`
+
+1. `/movein` lists rooms, vacant ones first. Pick a room.
+2. Type the tenant name. If a tenant with that exact `Name` exists, choose "Use existing" or "Create new". A new tenant can get notes.
+3. Pick the monthly rent (the room's `Default Rent` button or a typed amount) and the start date (Today, 1st of next month, or typed). A start date more than 60 days in the past is rejected.
+4. Pick how the first payment works:
+   - **Regular monthly from start date.** The first charge is the full rent, due on the start date. Later charges fall due on the same day each month (day 28 at most).
+   - **Part month, then monthly on the 1st.** The first charge is the prorated amount for the rest of the start month (rent x 12 / 365 per day, or an amount you type), due on the start date. Later charges are due on the 1st. This option is not shown when the start date is the 1st.
+5. The confirm screen lists the tenant, tenancy label (`{Room code} {Tenant name}`), due day and every charge. It warns if the room is already `Occupied`.
+6. Confirm creates the first charge and, when the bot runs on or after the 15th (UTC), next month's charge as well. Before the 15th the charge generator creates next month's charge on its run.
+
+Cost on the Airtable free plan: a move-in uses about 5 to 7 API calls and a move-out about 4. A full staging test run is about 30 calls.
+
+## Finishing a half-done move-in
+
+Confirm writes records in this order, with no rollback:
+
+1. Tenants (skipped when you reused an existing tenant)
+2. Tenancies
+3. Charges (one write per charge)
+4. Rooms: `Status` set to `Occupied`
+
+If a write fails, the bot replies "Move-in not finished". The reply lists the finished steps with links and lists the steps still to do. To finish:
+
+1. Open each link and confirm those records look right.
+2. For each step still to do, create the record in Airtable by hand: the Tenancy (with `Room`, `Tenant`, `Start Date`, `Due Day`, `Monthly Rent`, `Frequency` = `Monthly`), then the Charges (`Tenancy`, `Type` = `Rent`, `Period`, `Due Date`, `Amount`, label `{tenancy label} {YYYY-MM} Rent`), then the room `Status`.
+3. Do not create a charge that already exists. The charge generator skips a period that already has a charge for the tenancy.
+
+A failure with HTTP 4xx means that step did not save. A reply that says "This step may have saved" (a 5xx, a timeout, or an unreadable response) means Airtable may have applied the write anyway. Open that table first and look for the record before you redo the step. The Airtable client sends each create (POST) once and does not retry it. The record may still exist from that one attempt. Create it by hand only if it is not there. If you do find a duplicate, delete it by hand.
+
+If the reply says "Move-in not saved ... Nothing was changed", the very first write failed with a 4xx. Worker logs show which table and status. Check that table's fields in Airtable, then run `/movein` again.
+
+## Fixing charges due after an end date
+
+When a tenant moves out before the generator's already-created charges are due, those charges stay in Airtable. The `/moveout` confirm screen lists them as "Charges due after the end date". The bot does not edit or delete charges, so fix them by hand.
+
+For each charge listed:
+
+1. Open it with the link on the confirm screen.
+2. If the tenant should not pay it, delete the charge, or reduce its `Amount` when the tenant owes part of that month (for example a part month at the end of the tenancy).
+3. If a Payment is already linked to the charge, leave the charge and decide with the tenant whether to refund or move the payment.
+
+The charge generator will not create new charges after `End Date`. The Discord summary lists those tenancies under "⏭ Skipped: outside tenancy dates".
+
+## BotFather command list
+
+Telegram shows the command menu from BotFather, not from the Worker. After adding `/movein` and `/moveout`, open @BotFather, send `/setcommands`, choose the bot, and send this text:
+
+```text
+pay - Record a tenant payment
+reminder - Show overdue and upcoming payments
+movein - Start a new tenancy
+moveout - End a tenancy
+cancel - Cancel current operation
+```
+
+Do this once for the production bot and once for the staging bot (`@ChwqueudciBot`). The commands work without it. Only the menu needs it.
 
 ## Tests warn about compatibility date fallback
 

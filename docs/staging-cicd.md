@@ -14,6 +14,7 @@ This repo now has a staging deployment lane for the two Cloudflare Workers.
 | Staging KV namespace id | `17e24003884e454dbd96d81acc37bf2d` |
 | Charge Worker name | `charge-generator-staging` |
 | Payment Worker name | `payment-bot-staging` |
+| Staging Durable Object | `CONFIRM_LOCK` (class `ConfirmLock`), created by the first deploy from the `v1` migration |
 
 ## GitHub Environment: `staging`
 

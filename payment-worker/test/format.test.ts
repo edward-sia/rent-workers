@@ -1,5 +1,14 @@
-import { afterEach, describe, expect, it, vi } from 'vitest';
-import { escapeTelegramMarkdown, formatAUD, parseAmount, parseDate, todayISO, yesterdayISO } from '../src/format';
+import { describe, expect, it } from 'vitest';
+import {
+  escapeTelegramMarkdown,
+  failureSummary,
+  formatAUD,
+  httpStatusOf,
+  parseAmount,
+  parseDate,
+  melbourneDateISO,
+  melbourneYesterdayISO,
+} from '../src/format';
 
 describe('formatAUD', () => {
   it('formats with $ and 2 dp', () => {
@@ -51,22 +60,47 @@ describe('parseDate', () => {
   });
 });
 
-describe('todayISO / yesterdayISO', () => {
-  afterEach(() => {
-    vi.useRealTimers();
+describe('melbourneDateISO / melbourneYesterdayISO', () => {
+  it('uses the Melbourne calendar day, not the UTC day', () => {
+    const now = new Date('2026-11-07T23:30:00Z');
+
+    expect(melbourneDateISO(now)).toBe('2026-11-08');
+    expect(melbourneYesterdayISO(now)).toBe('2026-11-07');
   });
 
-  it('todayISO matches YYYY-MM-DD shape', () => {
-    expect(todayISO()).toMatch(/^\d{4}-\d{2}-\d{2}$/);
+  it('defaults to the current time', () => {
+    expect(melbourneDateISO()).toMatch(/^\d{4}-\d{2}-\d{2}$/);
+  });
+});
+
+describe('httpStatusOf', () => {
+  it('keeps only the HTTP status from an Airtable error', () => {
+    const error = new Error('Airtable update [tblX]: HTTP 422: {"error":{"message":"secret"}}');
+    expect(httpStatusOf(error)).toBe('HTTP 422');
   });
 
-  it('yesterdayISO is one day before today', () => {
-    vi.useFakeTimers();
-    vi.setSystemTime(new Date('2026-04-26T12:00:00Z'));
+  it('falls back when the error has no HTTP status', () => {
+    expect(httpStatusOf(new Error('network down'))).toBe('request failed');
+  });
+});
 
-    const today = new Date(`${todayISO()}T00:00:00Z`);
-    const yesterday = new Date(`${yesterdayISO()}T00:00:00Z`);
+describe('failureSummary', () => {
+  it('keeps only the HTTP status', () => {
+    const error = new Error('Airtable create [tblX]: HTTP 422: {"error":{"message":"secret"}}');
+    expect(failureSummary(error)).toBe('HTTP 422');
+  });
 
-    expect((today.getTime() - yesterday.getTime()) / 86400000).toBe(1);
+  it('names a schema mismatch without the field details', () => {
+    const error = new Error('Airtable schema mismatch on create [tblX/rec1] at Label: Required');
+    expect(failureSummary(error)).toBe('schema mismatch');
+  });
+
+  it('names a timeout', () => {
+    const error = new Error('Airtable create [tblX]: The operation was aborted due to timeout');
+    expect(failureSummary(error)).toBe('timeout');
+  });
+
+  it('falls back for anything else', () => {
+    expect(failureSummary(new Error('network down'))).toBe('request failed');
   });
 });

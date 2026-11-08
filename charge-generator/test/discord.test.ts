@@ -1,21 +1,28 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
-import { notifyDiscord } from '../src/discord';
+import { notifyDiscord, type RunSummary } from '../src/discord';
 
 beforeEach(() => {
   vi.restoreAllMocks();
   vi.unstubAllGlobals();
 });
 
-function sentEmbed(fetchMock: ReturnType<typeof vi.fn>) {
-  const call = fetchMock.mock.calls[0] as unknown as [string, RequestInit];
-  return JSON.parse(call[1].body as string).embeds[0] as { color: number };
+interface SentEmbed {
+  color: number;
+  fields: { name: string; value: string }[];
 }
+
+function sentEmbed(fetchMock: ReturnType<typeof vi.fn>): SentEmbed {
+  const call = fetchMock.mock.calls[0] as unknown as [string, RequestInit];
+  return JSON.parse(call[1].body as string).embeds[0] as SentEmbed;
+}
+
+const EMPTY: RunSummary = { created: [], existed: [], outside: [], errors: [] };
 
 describe('notifyDiscord', () => {
   it('returns true on 2xx', async () => {
     vi.stubGlobal('fetch', vi.fn(async () => new Response(null, { status: 204 })));
 
-    const ok = await notifyDiscord('http://x', '2026-05', ['recA'], [], []);
+    const ok = await notifyDiscord('http://x', '2026-05', { ...EMPTY, created: ['recA'] });
 
     expect(ok).toBe(true);
   });
@@ -24,7 +31,7 @@ describe('notifyDiscord', () => {
     const fetchMock = vi.fn(async () => new Response(null, { status: 204 }));
     vi.stubGlobal('fetch', fetchMock);
 
-    await notifyDiscord('http://x', '2026-05', [], [], ['tenancy recA: Airtable create failed']);
+    await notifyDiscord('http://x', '2026-05', { ...EMPTY, errors: ['tenancy recA: Airtable create failed'] });
 
     expect(sentEmbed(fetchMock).color).toBe(0xff4444);
   });
@@ -33,7 +40,7 @@ describe('notifyDiscord', () => {
     const fetchMock = vi.fn(async () => new Response(null, { status: 204 }));
     vi.stubGlobal('fetch', fetchMock);
 
-    await notifyDiscord('http://x', '2026-05', ['recA'], [], []);
+    await notifyDiscord('http://x', '2026-05', { ...EMPTY, created: ['recA'] });
 
     expect(sentEmbed(fetchMock).color).toBe(0x00c851);
   });
@@ -42,7 +49,7 @@ describe('notifyDiscord', () => {
     const fetchMock = vi.fn(async () => new Response(null, { status: 204 }));
     vi.stubGlobal('fetch', fetchMock);
 
-    await notifyDiscord('http://x', '2026-05', [], ['recA'], []);
+    await notifyDiscord('http://x', '2026-05', { ...EMPTY, existed: ['recA'] });
 
     expect(sentEmbed(fetchMock).color).toBe(0xffbb33);
   });
@@ -51,7 +58,7 @@ describe('notifyDiscord', () => {
     const errorSpy = vi.spyOn(console, 'error').mockImplementation(() => {});
     vi.stubGlobal('fetch', vi.fn(async () => new Response('tenant upstream details', { status: 502 })));
 
-    const ok = await notifyDiscord('http://x', '2026-05', ['recA'], [], []);
+    const ok = await notifyDiscord('http://x', '2026-05', { ...EMPTY, created: ['recA'] });
 
     expect(ok).toBe(false);
     expect(errorSpy).toHaveBeenCalledWith('[Discord] webhook failed: status=502');
@@ -63,8 +70,33 @@ describe('notifyDiscord', () => {
       throw new TypeError('down');
     }));
 
-    const ok = await notifyDiscord('http://x', '2026-05', ['recA'], [], []);
+    const ok = await notifyDiscord('http://x', '2026-05', { ...EMPTY, created: ['recA'] });
 
     expect(ok).toBe(false);
+  });
+
+  it('lists date-window skips in their own field, apart from already existed', async () => {
+    const fetchMock = vi.fn(async () => new Response(null, { status: 204 }));
+    vi.stubGlobal('fetch', fetchMock);
+
+    await notifyDiscord('http://x', '2026-05', { ...EMPTY, existed: ['tenancy recA'], outside: ['tenancy recB'] });
+
+    expect(sentEmbed(fetchMock).fields).toEqual([
+      { name: '✅ Created (0)', value: '—', inline: false },
+      { name: '⏭ Already existed (1)', value: 'tenancy recA', inline: false },
+      { name: '⏭ Skipped: outside tenancy dates (1)', value: 'tenancy recB', inline: false },
+    ]);
+  });
+
+  it('leaves out the outside-dates field when nothing was skipped for dates', async () => {
+    const fetchMock = vi.fn(async () => new Response(null, { status: 204 }));
+    vi.stubGlobal('fetch', fetchMock);
+
+    await notifyDiscord('http://x', '2026-05', { ...EMPTY, existed: ['tenancy recA'] });
+
+    expect(sentEmbed(fetchMock).fields.map((field) => field.name)).toEqual([
+      '✅ Created (0)',
+      '⏭ Already existed (1)',
+    ]);
   });
 });

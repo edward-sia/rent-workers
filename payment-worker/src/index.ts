@@ -3,6 +3,15 @@ import { createBot } from './bot';
 import { requireWebhookSecret } from './auth';
 import type { Env } from './types';
 
+export { ConfirmLock } from './confirm-lock';
+
+/**
+ * How long grammY waits for a handler before it gives up. Its default is 10 s, which a
+ * move-in Confirm against a slow Airtable can pass. Giving up mid-save leaves the session
+ * at `saving` with some writes done.
+ */
+const WEBHOOK_TIMEOUT_MS = 50_000;
+
 export default {
   async fetch(request: Request, env: Env): Promise<Response> {
     const url = new URL(request.url);
@@ -21,7 +30,7 @@ export default {
     if (denied) return denied;
 
     const bot = createBot(env);
-    const handler = webhookCallback(bot, 'cloudflare-mod');
+    const handler = webhookCallback(bot, 'cloudflare-mod', { timeoutMilliseconds: WEBHOOK_TIMEOUT_MS });
     return handler(request);
   },
 };

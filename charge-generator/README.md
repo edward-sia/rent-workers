@@ -15,6 +15,7 @@ Cron fires on the 15th
   -> Fetch active tenancies from Airtable
   -> Fetch existing Charges for next month's YYYY-MM period
   -> Skip already-covered tenancies
+  -> Skip tenancies whose due date is outside Start Date..End Date
   -> Create missing Charge records
   -> Post Discord summary
   -> Log counts/errors to Cloudflare
@@ -54,6 +55,8 @@ Charge fields written:
 | `Period` | `YYYY-MM` |
 | `Due Date` | `Due Day`, then `Start Date` day, capped at 28 |
 | `Amount` | tenancy `Monthly Rent` |
+
+A tenancy is skipped when that due date is before `Start Date` or after `End Date`. The Discord summary lists it as `tenancy <id>` in its own "⏭ Skipped: outside tenancy dates" field. That field appears only when at least one tenancy was skipped this way. Both dates are inclusive. A missing `Start Date` or `End Date` means no limit on that side.
 
 ## Environment Variables / Secrets
 
@@ -144,13 +147,12 @@ npx wrangler secret put RUN_TOKEN --env staging
 
 ## Notification and Log Privacy
 
-Discord summaries and Cloudflare logs are intentionally minimized. They include the period, created/skipped/error counts, status codes, and stable Airtable record IDs such as tenancy or charge IDs. They do not include tenant labels, rent amounts, or raw upstream response bodies.
+Discord summaries and Cloudflare logs are intentionally minimized. They include the period, the created, already-existed, outside-dates and error counts, status codes, and stable Airtable record IDs such as tenancy or charge IDs. They do not include tenant labels, rent amounts, or raw upstream response bodies.
 
 ## Testing
 
 Unit tests cover:
 
-- `src/due-date.ts`
 - `src/discord.ts`
 - `src/auth.ts`
 
@@ -171,8 +173,7 @@ Known test-tooling note: the current Workers Vitest pool dependency falls back t
 ```
 src/
   index.ts     -- Worker entrypoint and route/cron wiring
-  charges.ts   -- charge-generation orchestration
-  due-date.ts  -- due date resolver
+  charges.ts   -- charge-generation orchestration (due dates and charge shape come from @rent/tenancy)
   discord.ts   -- Discord summary notification
   auth.ts      -- /run bearer auth
 test/

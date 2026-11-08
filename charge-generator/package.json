@@ -12,6 +12,7 @@
   },
   "dependencies": {
     "@rent/airtable-client": "*",
+    "@rent/tenancy": "*",
     "zod": "^3.23.8"
   },
   "devDependencies": {
