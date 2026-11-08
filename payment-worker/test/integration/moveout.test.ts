@@ -5,11 +5,13 @@ import { melbourneDateISO } from '../../src/format';
 import {
   AIRTABLE_ORIGIN,
   CHARGES,
+  OP_ID,
   ROOMS,
   TENANCIES,
   USER_ID,
   buttonData,
   callbackUpdate,
+  confirmButton,
   loggedText,
   messageUpdate,
   parseBody,
@@ -103,7 +105,9 @@ const CONFIRM_SESSION = {
   startDate: '2026-01-01',
   roomId: 'recR1',
   roomCode: '6B-R6',
+  opId: OP_ID,
 };
+const CONFIRM = `mo:confirm:${OP_ID}`;
 
 describe('/moveout', () => {
   it('full move-out with end date today', async () => {
@@ -117,7 +121,7 @@ describe('/moveout', () => {
     await telegramUpdate(messageUpdate(1, '/moveout'));
     await telegramUpdate(callbackUpdate(2, 'mo:t:recT1'));
     await telegramUpdate(callbackUpdate(3, 'mo:d:today'));
-    await telegramUpdate(callbackUpdate(4, 'mo:confirm'));
+    await telegramUpdate(callbackUpdate(4, confirmButton(telegram, 'mo:confirm')));
 
     expect(tenancyPatch.body).toEqual({ fields: { 'End Date': today } });
     expect(roomPatch.body).toEqual({ fields: { Status: 'Vacant' } });
@@ -142,7 +146,7 @@ describe('/moveout', () => {
     await telegramUpdate(callbackUpdate(11, 'mo:t:recT1'));
     await telegramUpdate(callbackUpdate(12, 'mo:d:manual'));
     await telegramUpdate(messageUpdate(13, future));
-    await telegramUpdate(callbackUpdate(14, 'mo:confirm'));
+    await telegramUpdate(callbackUpdate(14, confirmButton(telegram, 'mo:confirm')));
 
     expect(tenancyPatch.body).toEqual({ fields: { 'End Date': future } });
     const last = String(lastReply(telegram).text);
@@ -184,7 +188,7 @@ describe('/moveout', () => {
     expect(text).not.toContain('Someone Else');
     expect(text).not.toContain('Old Rent');
     expect(text).toContain('$200.00');
-    expect(buttonData([confirm])).toEqual(['mo:confirm', 'mo:cancel']);
+    expect(buttonData([confirm])).toEqual([expect.stringMatching(/^mo:confirm:[0-9a-f]{12}$/), 'mo:cancel']);
     expect((await readSession()).step).toBe('mo_confirm');
   });
 
@@ -206,13 +210,13 @@ describe('/moveout', () => {
     const paySession = { flow: 'pay', step: 'enter_amount', tenancyId: 'recT1' };
     await seedSession(paySession);
 
-    await telegramUpdate(callbackUpdate(40, 'mo:confirm'));
+    await telegramUpdate(callbackUpdate(40, CONFIRM));
 
     expect(String(lastReply(telegram).text)).toContain('expired');
     expect(await readSession()).toEqual(paySession);
 
     await testEnv.SESSION_KV.delete(SESSION_KEY);
-    await telegramUpdate(callbackUpdate(41, 'mo:confirm'));
+    await telegramUpdate(callbackUpdate(41, CONFIRM));
 
     expect(texts(telegram)).toHaveLength(2);
     expect(String(lastReply(telegram).text)).toContain('expired');
@@ -224,7 +228,7 @@ describe('/moveout', () => {
     const saving = { ...CONFIRM_SESSION, step: 'saving', endDate: melbourneDateISO() };
     await seedSession(saving);
 
-    await telegramUpdate(callbackUpdate(50, 'mo:confirm'));
+    await telegramUpdate(callbackUpdate(50, CONFIRM));
 
     const reply = lastReply(telegram);
     expect(String(reply.text)).toBe(
@@ -232,6 +236,36 @@ describe('/moveout', () => {
     );
     expect(reply.parse_mode).toBeUndefined();
     expect(await readSession()).toEqual(saving);
+  });
+
+  it('two Confirm taps at the same time save once', async () => {
+    const today = melbourneDateISO();
+    const telegram = stubTelegram(4);
+    await seedSession({ ...CONFIRM_SESSION, endDate: today });
+    const tenancyPatch = mockPatch(TENANCIES, 'recT1', { Label: '6B-R6 Sun Peng', 'End Date': today });
+    const roomPatch = mockPatch(ROOMS, 'recR1', { Code: '6B-R6', Status: 'Vacant' });
+
+    await Promise.all([
+      telegramUpdate(callbackUpdate(60, CONFIRM)),
+      telegramUpdate(callbackUpdate(61, CONFIRM)),
+    ]);
+
+    expect([tenancyPatch.calls, roomPatch.calls]).toEqual([1, 1]);
+    const replies = texts(telegram);
+    expect(replies.filter((text) => text.includes('Move-out saved'))).toHaveLength(1);
+    expect(replies.filter((text) => text.includes('already being saved'))).toHaveLength(1);
+  });
+
+  it('a Confirm from an older screen does not end a different tenancy', async () => {
+    const telegram = stubTelegram(4);
+    const current = { ...CONFIRM_SESSION, tenancyId: 'recT2', endDate: melbourneDateISO(), opId: 'bbbbbbbbbbbb' };
+    await seedSession(current);
+
+    await telegramUpdate(callbackUpdate(62, 'mo:confirm:aaaaaaaaaaaa'));
+    await telegramUpdate(callbackUpdate(63, 'mo:confirm'));
+
+    expect(texts(telegram).every((text) => text.includes('expired'))).toBe(true);
+    expect(await readSession()).toEqual(current);
   });
 
   it('cancel during a save says the save may have finished', async () => {
@@ -285,7 +319,7 @@ describe('/moveout', () => {
     await seedSession({ ...CONFIRM_SESSION, endDate: melbourneDateISO() });
     mockPatch(TENANCIES, 'recT1', {}, 422);
 
-    await telegramUpdate(callbackUpdate(80, 'mo:confirm'));
+    await telegramUpdate(callbackUpdate(80, CONFIRM));
 
     const text = String(lastReply(telegram).text);
     expect(text).toContain('Move-out not saved: HTTP 422. Nothing was changed.');
@@ -301,7 +335,7 @@ describe('/moveout', () => {
     await seedSession({ ...CONFIRM_SESSION, endDate: melbourneDateISO() });
     mockPatch(TENANCIES, 'recT1', {}, 503, 3);
 
-    await telegramUpdate(callbackUpdate(82, 'mo:confirm'));
+    await telegramUpdate(callbackUpdate(82, CONFIRM));
 
     const reply = lastReply(telegram);
     const text = String(reply.text);
@@ -320,7 +354,7 @@ describe('/moveout', () => {
     await seedSession({ ...CONFIRM_SESSION, endDate: melbourneDateISO() });
     mockPatch(TENANCIES, 'recT1', { 'End Date': melbourneDateISO() });
 
-    await telegramUpdate(callbackUpdate(83, 'mo:confirm'));
+    await telegramUpdate(callbackUpdate(83, CONFIRM));
 
     const text = String(lastReply(telegram).text);
     expect(text).toContain('may have saved: request failed');
@@ -337,7 +371,7 @@ describe('/moveout', () => {
     mockPatch(TENANCIES, 'recT1', { Label: '6B-R6 Sun Peng', 'End Date': today });
     mockPatch(ROOMS, 'recR1', {}, 422);
 
-    await telegramUpdate(callbackUpdate(81, 'mo:confirm'));
+    await telegramUpdate(callbackUpdate(81, CONFIRM));
 
     const text = String(lastReply(telegram).text);
     expect(text).toContain('End date saved');

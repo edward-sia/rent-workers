@@ -3,6 +3,8 @@ import { createBot } from './bot';
 import { requireWebhookSecret } from './auth';
 import type { Env } from './types';
 
+export { ConfirmLock } from './confirm-lock';
+
 /**
  * How long grammY waits for a handler before it gives up. Its default is 10 s, which a
  * move-in Confirm against a slow Airtable can pass. Giving up mid-save leaves the session

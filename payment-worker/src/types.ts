@@ -1,4 +1,5 @@
-import type { FirstPaymentOption } from '@rent/tenancy';
+import type { FirstPaymentOption, PlannedCharge } from '@rent/tenancy';
+import type { ConfirmLock } from './confirm-lock';
 
 // ── Cloudflare Worker env bindings ───────────────────────
 export interface Env {
@@ -8,6 +9,7 @@ export interface Env {
   AIRTABLE_BASE_ID: string;    // app6He8xRaUzNBTDl
   AUTHORIZED_USER_ID: string;  // your Telegram numeric user ID
   SESSION_KV: KVNamespace;
+  CONFIRM_LOCK: DurableObjectNamespace<ConfirmLock>; // one Confirm write per operation
 }
 
 // ── Wizard session — persisted in KV between Telegram messages ──
@@ -56,6 +58,9 @@ export interface WizardSession {
   method?: string;          // "Cash" | "Bank Transfer"
   date?: string;            // YYYY-MM-DD
 
+  // Set when a confirm screen is shown. Its Confirm button carries the same ID.
+  opId?: string;
+
   // move-out
   endDate?: string;
   startDate?: string;
@@ -71,6 +76,7 @@ export interface WizardSession {
   monthlyRent?: number;
   firstOption?: FirstPaymentOption;
   firstAmount?: number;
+  plannedCharges?: PlannedCharge[]; // the charges the confirm screen showed
 
   // list picks, keyed by the short id used in callback data
   choices?: Record<string, SessionChoice>;

@@ -9,6 +9,7 @@ import {
 import { chargesAfter, checkEndDate, endOfMonthISO, owedThrough } from '@rent/tenancy';
 import { Bot, InlineKeyboard, type Context } from 'grammy';
 import { airtableFor } from './airtable';
+import { CLAIM_FAILED, claimConfirm, confirmData, confirmPattern, newOpId } from './confirm';
 import {
   escapeTelegramMarkdown as esc,
   escapeTelegramMarkdownUrl,
@@ -125,11 +126,14 @@ async function showConfirm(
     return;
   }
 
-  const updated: WizardSession = { ...session, flow: 'moveout', step: 'mo_confirm', endDate };
+  const opId = newOpId();
+  const updated: WizardSession = { ...session, flow: 'moveout', step: 'mo_confirm', endDate, opId };
   await setSession(userId, updated, env.SESSION_KV);
   await respond(ctx, confirmText(env, updated, charges, today), {
     parse_mode: 'Markdown',
-    reply_markup: new InlineKeyboard().text('✅ Confirm', 'mo:confirm').text('❌ Cancel', 'mo:cancel'),
+    reply_markup: new InlineKeyboard()
+      .text('✅ Confirm', confirmData('mo:confirm', opId))
+      .text('❌ Cancel', 'mo:cancel'),
   });
 }
 
@@ -271,20 +275,31 @@ export function registerMoveOut(bot: Bot, env: Env): void {
     await showConfirm(ctx, env, session, ctx.match[1] === 'eom' ? endOfMonthISO(today) : today);
   });
 
-  bot.callbackQuery('mo:confirm', async (ctx) => {
+  bot.callbackQuery(confirmPattern('mo:confirm'), async (ctx) => {
     await ctx.answerCallbackQuery();
-    const session = await getSession(ctx.from.id, env.SESSION_KV);
-    if (session.flow === 'moveout' && session.step === 'saving') {
+    const userId = ctx.from.id;
+    const opId = ctx.match[1];
+    const session = await getSession(userId, env.SESSION_KV);
+    // The button must belong to the screen the session is on, so an older screen's
+    // Confirm can't end a different tenancy.
+    const ours = opId !== undefined && session.flow === 'moveout' && session.opId === opId;
+    if (ours && session.step === 'saving') {
       await ctx.editMessageText(SAVING);
       return;
     }
-    if (session.flow !== 'moveout' || session.step !== 'mo_confirm' || !session.tenancyId || !session.endDate) {
+    if (!opId || !ours || session.step !== 'mo_confirm' || !session.tenancyId || !session.endDate) {
       await ctx.editMessageText(EXPIRED);
       return;
     }
 
-    // KV is the double-tap guard: a second Confirm finds `saving` and writes nothing.
-    await setSession(ctx.from.id, { ...session, step: 'saving' }, env.SESSION_KV);
+    // Only one tap per operation gets past this, even when two arrive at once.
+    const claim = await claimConfirm(env, userId, opId, 'moveout');
+    if (claim !== 'claimed') {
+      await ctx.editMessageText(claim === 'taken' ? SAVING : CLAIM_FAILED);
+      return;
+    }
+    // `saving` makes Cancel and typed text say "already saving" while the writes run.
+    await setSession(userId, { ...session, step: 'saving' }, env.SESSION_KV);
     await saveMoveOut(ctx, env, session);
   });
 

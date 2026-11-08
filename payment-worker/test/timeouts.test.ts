@@ -19,6 +19,7 @@ const env = {
   AIRTABLE_BASE_ID: 'appTEST',
   AUTHORIZED_USER_ID: '1234',
   SESSION_KV: {} as KVNamespace,
+  CONFIRM_LOCK: {} as Env['CONFIRM_LOCK'],
 } satisfies Env;
 
 afterEach(() => {

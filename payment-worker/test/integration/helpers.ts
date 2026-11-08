@@ -103,3 +103,13 @@ export function buttonData(payloads: any[]): string[] {
 export function loggedText(spy: { mock: { calls: unknown[][] } }): string {
   return spy.mock.calls.map((call) => call.map(String).join(' ')).join('\n');
 }
+
+/** An operation ID for seeded confirm sessions. Its Confirm button is `<prefix>:<OP_ID>`. */
+export const OP_ID = '0123456789ab';
+
+/** Callback data of the newest Confirm button shown, like `mi:confirm:3f9c0a1b2d4e`. */
+export function confirmButton(payloads: any[], prefix: string): string {
+  const data = buttonData(payloads).filter((button) => button.startsWith(`${prefix}:`)).at(-1);
+  if (!data) throw new Error(`No ${prefix} button was shown`);
+  return data;
+}

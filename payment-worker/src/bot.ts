@@ -1,6 +1,7 @@
 import { ChargeSchema, PaymentSchema, TABLES, TenancySchema } from '@rent/airtable-client';
 import { Bot, InlineKeyboard, type Context } from 'grammy';
 import { airtableFor } from './airtable';
+import { CLAIM_FAILED, claimConfirm, confirmData, confirmPattern, newOpId } from './confirm';
 import {
   escapeTelegramMarkdown,
   escapeTelegramMarkdownUrl,
@@ -19,6 +20,10 @@ import { formatReminderMessages } from './reminder';
 import { clearSession, getSession, setSession } from './session';
 import type { Env, WizardSession } from './types';
 
+const PAY_EXPIRED = '❌ Session expired. Use /pay to start again.';
+/** Plain text. */
+const PAY_SAVING =
+  '⏳ This payment is already being saved, or the save has finished. Check Airtable before you try again.';
 const METHOD_CASH = 'Cash';
 const METHOD_BANK_TRANSFER = 'Bank Transfer';
 const HELP_TEXT =
@@ -259,21 +264,38 @@ export function createBot(env: Env): Bot {
       return;
     }
 
-    const updated = { ...session, flow: 'pay' as const, step: 'confirm' as const, date: value };
-    await setSession(ctx.from!.id, updated, env.SESSION_KV);
-    await sendConfirmation(ctx, updated);
+    await sendConfirmation(ctx, env, { ...session, flow: 'pay', step: 'confirm', date: value });
   });
 
-  bot.callbackQuery('confirm:yes', async (ctx) => {
+  bot.callbackQuery(confirmPattern('confirm:yes'), async (ctx) => {
     await ctx.answerCallbackQuery();
     const userId = ctx.from!.id;
+    const opId = ctx.match[1];
     const session = await getSession(userId, env.SESSION_KV);
-
+    // The button must belong to the screen the session is on. Anything else is an older
+    // screen, and it must not save the current payment or clear the current session.
+    const ours = opId !== undefined && session.flow === 'pay' && session.opId === opId;
+    if (ours && session.step === 'saving') {
+      await ctx.editMessageText(PAY_SAVING);
+      return;
+    }
+    if (!opId || !ours || session.step !== 'confirm') {
+      await ctx.editMessageText(PAY_EXPIRED);
+      return;
+    }
     if (!session.chargeId || !session.amount || !session.method || !session.date) {
-      await ctx.editMessageText('❌ Session expired. Use /pay to start again.');
+      await ctx.editMessageText(PAY_EXPIRED);
       await clearSession(userId, env.SESSION_KV);
       return;
     }
+
+    // Only one tap per operation gets past this, even when two arrive at once.
+    const claim = await claimConfirm(env, userId, opId, 'pay');
+    if (claim !== 'claimed') {
+      await ctx.editMessageText(claim === 'taken' ? PAY_SAVING : CLAIM_FAILED);
+      return;
+    }
+    await setSession(userId, { ...session, step: 'saving' }, env.SESSION_KV);
 
     try {
       const namePart = session.tenancyLabel?.split(' ').slice(1).join(' ')
@@ -319,6 +341,11 @@ export function createBot(env: Env): Bot {
 
   bot.callbackQuery('confirm:no', async (ctx) => {
     await ctx.answerCallbackQuery();
+    const session = await getSession(ctx.from!.id, env.SESSION_KV);
+    if (session.flow === 'pay' && session.step === 'saving') {
+      await ctx.editMessageText(PAY_SAVING);
+      return;
+    }
     await clearSession(ctx.from!.id, env.SESSION_KV);
     await ctx.editMessageText('❌ Cancelled. Use /pay to start again.');
   });
@@ -363,9 +390,7 @@ export function createBot(env: Env): Bot {
         return;
       }
 
-      const updated = { ...session, flow: 'pay' as const, step: 'confirm' as const, date };
-      await setSession(userId, updated, env.SESSION_KV);
-      await sendConfirmation(ctx, updated);
+      await sendConfirmation(ctx, env, { ...session, flow: 'pay', step: 'confirm', date });
       return;
     }
 
@@ -375,12 +400,16 @@ export function createBot(env: Env): Bot {
   return bot;
 }
 
+/** Save the session with a new operation ID, then send the confirm screen. */
 async function sendConfirmation(
   ctx: Context,
+  env: Env,
   session: WizardSession,
 ): Promise<void> {
+  const opId = newOpId();
+  await setSession(ctx.from!.id, { ...session, opId }, env.SESSION_KV);
   const keyboard = new InlineKeyboard()
-    .text('✅ Confirm', 'confirm:yes')
+    .text('✅ Confirm', confirmData('confirm:yes', opId))
     .text('❌ Cancel', 'confirm:no');
 
   await ctx.reply(confirmationText(session), {

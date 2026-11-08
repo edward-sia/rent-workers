@@ -19,6 +19,7 @@ import {
 } from '@rent/tenancy';
 import { Bot, InlineKeyboard, type Context } from 'grammy';
 import { airtableFor } from './airtable';
+import { CLAIM_FAILED, claimConfirm, confirmPattern, newOpId } from './confirm';
 import {
   escapeTelegramMarkdown as esc,
   formatAUD,
@@ -51,6 +52,9 @@ const EXPIRED = '⚠️ This move-in was already saved or has expired. Use /move
 /** Plain text. A Confirm still saving, or one cut off mid-save, leaves the session at `saving`. */
 const SAVING =
   '⏳ This move-in is already being saved, or the save has finished. Check Airtable before you try again.';
+/** Markdown. Shown above the confirm screen when the charges changed since it was last shown. */
+const PLAN_CHANGED =
+  '⚠️ *The charges changed since you saw this screen*, because the monthly charge run has happened. Nothing was saved. Check them and confirm again.';
 const MARKDOWN = { parse_mode: 'Markdown' } as const;
 const ROOM_FIELDS = ['Code', 'Default Rent', 'Status'];
 
@@ -120,21 +124,33 @@ const askFirst = (ctx: Context, env: Env, session: WizardSession, startDate: str
     firstPaymentPrompt(startDate, Number(session.monthlyRent)),
   );
 
+/** Same charges, in the same order. */
+function samePlan(a: PlannedCharge[], b: PlannedCharge[] | undefined): boolean {
+  return JSON.stringify(a) === JSON.stringify(b);
+}
+
+/**
+ * Show the confirm screen with a new operation ID. The session keeps the charges shown,
+ * so Confirm can tell when they would no longer match what gets saved.
+ */
 async function showConfirm(
   ctx: Context,
   env: Env,
   session: WizardSession,
   firstOption: FirstPaymentOption,
   firstAmount: number,
+  notice?: string,
 ): Promise<void> {
-  const updated: WizardSession = { ...session, step: 'mi_confirm', firstOption, firstAmount };
+  const opId = newOpId();
+  const updated: WizardSession = { ...session, step: 'mi_confirm', firstOption, firstAmount, opId };
   const moveIn = moveInOf(updated);
   if (!moveIn) {
     await clearSession(ctx.from!.id, env.SESSION_KV);
     await (ctx.callbackQuery ? ctx.editMessageText(EXPIRED) : ctx.reply(EXPIRED));
     return;
   }
-  await ask(ctx, env, updated, confirmPrompt(env, moveIn, planFor(moveIn)));
+  const plan = planFor(moveIn);
+  await ask(ctx, env, { ...updated, plannedCharges: plan }, confirmPrompt(env, moveIn, plan, opId, notice));
 }
 
 async function handleName(ctx: Context, env: Env, session: WizardSession, name: string): Promise<void> {
@@ -163,7 +179,7 @@ async function handleName(ctx: Context, env: Env, session: WizardSession, name: 
 }
 
 /** Do the Confirm writes in order and report which ones finished. There is no rollback. */
-async function saveMoveIn(ctx: Context, env: Env, moveIn: MoveIn): Promise<void> {
+async function saveMoveIn(ctx: Context, env: Env, moveIn: MoveIn, plan: PlannedCharge[]): Promise<void> {
   const airtable = airtableFor(env);
   const label = tenancyLabel(moveIn.roomCode, moveIn.tenantName);
   const name = esc(moveIn.tenantName);
@@ -206,7 +222,7 @@ async function saveMoveIn(ctx: Context, env: Env, moveIn: MoveIn): Promise<void>
       return `📄 Tenancy ${esc(label)}: ${link(env, TABLES.TENANCIES, tenancyId, 'Open')}`;
     },
   });
-  for (const charge of planFor(moveIn)) {
+  for (const charge of plan) {
     const summary = `${esc(charge.period)} rent charge, ${esc(formatAUD(charge.amount))} due ${esc(charge.dueDate)}`;
     steps.push({
       todo: `create the ${summary}`,
@@ -396,22 +412,40 @@ export function registerMoveIn(bot: Bot, env: Env): void {
     await showConfirm(ctx, env, session, 'part_month', amount);
   });
 
-  bot.callbackQuery('mi:confirm', async (ctx) => {
+  bot.callbackQuery(confirmPattern('mi:confirm'), async (ctx) => {
     await ctx.answerCallbackQuery();
-    const session = await getSession(ctx.from.id, env.SESSION_KV);
-    if (session.flow === 'movein' && session.step === 'saving') {
+    const userId = ctx.from.id;
+    const opId = ctx.match[1];
+    const session = await getSession(userId, env.SESSION_KV);
+    // The button must belong to the screen the session is on. An older screen's button,
+    // say from a move-in that was cancelled, must not save the current one.
+    const ours = opId !== undefined && session.flow === 'movein' && session.opId === opId;
+    if (ours && session.step === 'saving') {
       await ctx.editMessageText(SAVING);
       return;
     }
-    const moveIn = session.flow === 'movein' && session.step === 'mi_confirm' ? moveInOf(session) : null;
-    if (!moveIn) {
+    const moveIn = ours && session.step === 'mi_confirm' ? moveInOf(session) : null;
+    if (!opId || !moveIn) {
       await ctx.editMessageText(EXPIRED);
       return;
     }
 
-    // KV is the double-tap guard: a second Confirm finds `saving` and writes nothing.
-    await setSession(ctx.from.id, { ...session, step: 'saving' }, env.SESSION_KV);
-    await saveMoveIn(ctx, env, moveIn);
+    // The charges depend on today's UTC date. Show the screen again if they changed.
+    const plan = planFor(moveIn);
+    if (!samePlan(plan, session.plannedCharges)) {
+      await showConfirm(ctx, env, session, moveIn.firstOption, moveIn.firstAmount, PLAN_CHANGED);
+      return;
+    }
+
+    // Only one tap per operation gets past this, even when two arrive at once.
+    const claim = await claimConfirm(env, userId, opId, 'movein');
+    if (claim !== 'claimed') {
+      await ctx.editMessageText(claim === 'taken' ? SAVING : CLAIM_FAILED);
+      return;
+    }
+    // `saving` makes Cancel and typed text say "already saving" while the writes run.
+    await setSession(userId, { ...session, step: 'saving' }, env.SESSION_KV);
+    await saveMoveIn(ctx, env, moveIn, plan);
   });
 
   bot.callbackQuery('mi:cancel', async (ctx) => {

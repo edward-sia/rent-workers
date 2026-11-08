@@ -217,6 +217,14 @@ Renaming `payment-worker` to something wider, such as `rent-bot`, is a separate 
 
 On Confirm, the bot first writes `step: 'saving'` to KV and then does the Airtable writes. A second Confirm that finds `saving` (or no session) replies "Already saved or expired" and writes nothing. This costs no Airtable calls.
 
+**Revised after PR review (2026-11-08).** The KV step alone can't stop two Confirms that arrive together, because both can read the confirm step before either writes `saving`. A test reproduced it: two simultaneous taps created two tenants, two tenancies and two charges. Three changes now apply to `/pay`, `/movein` and `/moveout`:
+
+- Each confirm screen has an operation ID. It is stored in the session and carried in the Confirm button. A button whose ID doesn't match the session writes nothing, so an older screen can't save a newer operation.
+- Before writing, Confirm must claim the operation ID from a per-user `ConfirmLock` Durable Object (SQLite storage, allowed on the Free plan). Each ID is handed out once.
+- `/movein` stores the charges its screen showed. If they change before Confirm, because the 15th (UTC) passed, the bot shows the screen again instead of saving different charges.
+
+The `saving` step stays, so Cancel and typed text still see that a save is running.
+
 ### `scripts/check-airtable-schema.ts`
 
 - Add Rooms and Tenants fields, plus the new Tenancies fields, to `REQUIRED_FIELDS`.

@@ -12,7 +12,7 @@ Check:
 2. Environment secrets exist: `CLOUDFLARE_API_TOKEN`, `CLOUDFLARE_ACCOUNT_ID`, `STAGING_TELEGRAM_BOT_TOKEN`, `STAGING_TELEGRAM_WEBHOOK_SECRET`.
 3. Environment variables exist: `STAGING_CHARGE_GENERATOR_URL`, `STAGING_PAYMENT_BOT_URL`.
 4. Cloudflare staging Worker secrets exist for both Workers. See `docs/staging-cicd.md`.
-5. `payment-worker/wrangler.toml` still points staging `SESSION_KV` to `17e24003884e454dbd96d81acc37bf2d`.
+5. `payment-worker/wrangler.toml` still points staging `SESSION_KV` to `17e24003884e454dbd96d81acc37bf2d`, and declares the `CONFIRM_LOCK` Durable Object binding under `env.staging`.
 6. `charge-generator/wrangler.jsonc` and `payment-worker/wrangler.toml` still point staging `AIRTABLE_BASE_ID` to `appzRYFa1yW5pQDEW`.
 
 Local config check:
@@ -234,7 +234,13 @@ If Airtable field names or status values changed, update `packages/airtable-clie
 
 Both commands only write to Airtable after you tap Confirm. The date buttons, the move-in start-date check and the move-out Vacant decision use the Melbourne date for "today". The `/moveout` tenancy list is different: Airtable filters it with its own `TODAY()`, so near midnight it can be a day off from the Melbourne date. Both reply to errors with an HTTP status and a link, never with the Airtable response body. Worker logs name the failed call and give the same status, for example `[payment-bot] movein failed: create Tenancies: HTTP 422`. Logs never include the response body either.
 
-If tapping Confirm or Cancel replies that the move-out or move-in is "already being saved, or the save has finished", the first Confirm is still running or stopped partway. Wait a minute, then check Airtable for what was written before you start the command again.
+If tapping Confirm or Cancel replies that the payment, move-out or move-in is "already being saved, or the save has finished", that operation's first Confirm got the save. It is still running, or it stopped partway. Wait a minute, then check Airtable for what was written before you start the command again. Two taps can't both save. The `ConfirmLock` Durable Object gives each confirm screen's save to one tap only.
+
+If Confirm replies that the operation "was already saved or has expired", the button belongs to an older confirm screen. Examples are a move-in you cancelled, or a screen from before the bot was last deployed. Nothing was written. Use the newest confirm screen, or start the command again.
+
+If `/movein` shows the confirm screen again with "The charges changed since you saw this screen", the monthly charge run (00:00 UTC on the 15th) happened after the screen was shown. Next month's charge is now added. Nothing was saved. Check the new list and confirm again.
+
+If Confirm replies "Could not start the save. Nothing was written.", the bot couldn't reach its `ConfirmLock` Durable Object. Tap Confirm again. If it keeps happening, look for `claim Confirm` in the Worker logs.
 
 ### `/moveout`
 

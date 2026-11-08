@@ -1,6 +1,7 @@
 import { SELF, env, fetchMock } from 'cloudflare:test';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import type { Env } from '../../src/types';
+import { OP_ID, confirmButton } from './helpers';
 
 const AIRTABLE_ORIGIN = 'https://api.airtable.com';
 const TELEGRAM_ORIGIN = 'https://api.telegram.org';
@@ -124,6 +125,12 @@ function mockCharges(records = [{
     .times(times);
 }
 
+const PAY_CONFIRM_SESSION = {
+  flow: 'pay', step: 'confirm', tenancyId: 'recT1', tenancyLabel: '6B Sun Peng',
+  chargeId: 'recC1', chargeLabel: '6B Sun Peng 2026-05 Rent', chargeBalance: 1650,
+  amount: 1650, method: 'Cash', date: '2026-05-01', opId: OP_ID,
+};
+
 describe('payment wizard', () => {
   it('replies to non-authorized Telegram users without writing session state', async () => {
     const telegramPayloads = stubTelegram(1);
@@ -168,7 +175,7 @@ describe('payment wizard', () => {
     await telegramUpdate(callbackUpdate(5, 'method:Cash'));
     const today = new Date().toISOString().slice(0, 10);
     await telegramUpdate(callbackUpdate(6, `date:${today}`));
-    await telegramUpdate(callbackUpdate(7, 'confirm:yes'));
+    await telegramUpdate(callbackUpdate(7, confirmButton(telegramPayloads, 'confirm:yes')));
 
     expect(createBody).not.toBeNull();
     expect(createBody.fields).toEqual(expect.objectContaining({
@@ -270,14 +277,14 @@ describe('payment wizard', () => {
     await testEnv.SESSION_KV.put(`session:${USER_ID}`, JSON.stringify({
       flow: 'pay', step: 'confirm', tenancyId: 'recT1', tenancyLabel: '6B Sun Peng',
       chargeId: 'recC1', chargeLabel: '6B Sun Peng 2026-05 Rent', chargeBalance: 1650,
-      amount: 1650, method: 'Cash', date: '2026-05-01',
+      amount: 1650, method: 'Cash', date: '2026-05-01', opId: OP_ID,
     }), { expirationTtl: 3600 });
     fetchMock
       .get(AIRTABLE_ORIGIN)
       .intercept({ path: `/v0/appTEST/${PAYMENTS}`, method: 'POST' })
       .reply(422, { error: { type: 'INVALID_VALUE', message: 'secret-airtable-detail' } });
 
-    await telegramUpdate(callbackUpdate(45, 'confirm:yes'));
+    await telegramUpdate(callbackUpdate(45, `confirm:yes:${OP_ID}`));
 
     const text = String(telegramPayloads.filter((payload) => payload.text !== undefined).at(-1).text);
     expect(text).toContain('Failed to save payment');
@@ -288,10 +295,48 @@ describe('payment wizard', () => {
     expect(await testEnv.SESSION_KV.get(`session:${USER_ID}`)).toBeNull();
   });
 
+  it('two Confirm taps at the same time record one payment', async () => {
+    const telegramPayloads = stubTelegram(4);
+    await testEnv.SESSION_KV.put(`session:${USER_ID}`, JSON.stringify(PAY_CONFIRM_SESSION), { expirationTtl: 3600 });
+    let posts = 0;
+    fetchMock
+      .get(AIRTABLE_ORIGIN)
+      .intercept({ path: `/v0/appTEST/${PAYMENTS}`, method: 'POST' })
+      .reply(() => {
+        posts += 1;
+        return { statusCode: 200, data: { id: 'recPNew', fields: { Label: 'Sun Peng 2026-05-01 $1,650.00' } } };
+      });
+
+    await Promise.all([
+      telegramUpdate(callbackUpdate(70, `confirm:yes:${OP_ID}`)),
+      telegramUpdate(callbackUpdate(71, `confirm:yes:${OP_ID}`)),
+    ]);
+
+    expect(posts).toBe(1);
+    const replies = telegramPayloads.filter((payload) => payload.text !== undefined).map((payload) => String(payload.text));
+    expect(replies.filter((text) => text.includes('Payment recorded'))).toHaveLength(1);
+    expect(replies.filter((text) => text.includes('already being saved'))).toHaveLength(1);
+    expect(await testEnv.SESSION_KV.get(`session:${USER_ID}`)).toBeNull();
+  });
+
+  it('a Confirm from an older screen does not record the current payment', async () => {
+    const telegramPayloads = stubTelegram(4);
+    const current = { ...PAY_CONFIRM_SESSION, opId: 'bbbbbbbbbbbb' };
+    await testEnv.SESSION_KV.put(`session:${USER_ID}`, JSON.stringify(current), { expirationTtl: 3600 });
+
+    await telegramUpdate(callbackUpdate(72, 'confirm:yes:aaaaaaaaaaaa'));
+    await telegramUpdate(callbackUpdate(73, 'confirm:yes'));
+
+    const replies = telegramPayloads.filter((payload) => payload.text !== undefined).map((payload) => String(payload.text));
+    expect(replies).toHaveLength(2);
+    expect(replies.every((text) => text.includes('Session expired'))).toBe(true);
+    expect(JSON.parse(String(await testEnv.SESSION_KV.get(`session:${USER_ID}`)))).toEqual(current);
+  });
+
   it('does not write a payment when confirm runs after the session expires', async () => {
     const telegramPayloads = stubTelegram(2);
 
-    await telegramUpdate(callbackUpdate(50, 'confirm:yes'));
+    await telegramUpdate(callbackUpdate(50, `confirm:yes:${OP_ID}`));
 
     expect(await testEnv.SESSION_KV.get(`session:${USER_ID}`)).toBeNull();
     expect(telegramPayloads.some(payload => String(payload.text).includes('Session expired'))).toBe(true);

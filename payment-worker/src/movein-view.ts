@@ -10,6 +10,7 @@ import {
   type PlannedCharge,
 } from '@rent/tenancy';
 import { InlineKeyboard } from 'grammy';
+import { confirmData } from './confirm';
 import { escapeTelegramMarkdown as esc, escapeTelegramMarkdownUrl, formatAUD } from './format';
 import type { Env } from './types';
 
@@ -105,10 +106,20 @@ export function partAmountPrompt(startDate: string, monthlyRent: number): Prompt
   };
 }
 
-export function confirmPrompt(env: Env, moveIn: MoveIn, plan: PlannedCharge[]): Prompt {
+/** `notice` is Markdown shown above the summary, like why the screen was shown again. */
+export function confirmPrompt(
+  env: Env,
+  moveIn: MoveIn,
+  plan: PlannedCharge[],
+  opId: string,
+  notice?: string,
+): Prompt {
+  const text = confirmText(env, moveIn, plan);
   return {
-    text: confirmText(env, moveIn, plan),
-    keyboard: new InlineKeyboard().text('✅ Confirm', 'mi:confirm').text('❌ Cancel', 'mi:cancel'),
+    text: notice ? `${notice}\n\n${text}` : text,
+    keyboard: new InlineKeyboard()
+      .text('✅ Confirm', confirmData('mi:confirm', opId))
+      .text('❌ Cancel', 'mi:cancel'),
   };
 }
 

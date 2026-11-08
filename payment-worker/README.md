@@ -13,6 +13,7 @@ flowchart TD
     GRAMMY --> BOT["Payment wizard bot"]
     BOT <--> SESSION["KV session helpers"]
     SESSION <--> KV["SESSION_KV, session:{userId}, 1hr TTL"]
+    BOT --> LOCK["CONFIRM_LOCK Durable Object, one per user"]
     BOT --> CLIENT["@rent/airtable-client"]
     CLIENT --> TEN["Airtable Tenancies"]
     CLIENT --> CHG["Airtable Charges"]
@@ -102,7 +103,15 @@ The confirm screen warns when the room is currently `Occupied`. The tenancy labe
 
 Writes happen in this order, with no rollback: Tenants (when new), Tenancies, Charges (one per charge), Rooms `Status` set to `Occupied`. If a step fails, the reply lists the finished steps with links and the steps still to do. A 4xx means that step did not save. A 5xx, timeout or unreadable response means it may have saved, and the reply says to check that table before redoing it.
 
-Confirm for both flows sets the KV session step to `saving` before writing. A second tap on Confirm or Cancel finds `saving` and writes nothing. It replies that the save is already in progress or has finished, and says to check Airtable before trying again.
+Every confirm screen (`/pay`, `/movein` and `/moveout`) gets a new 12-character operation ID. The session stores it, and the Confirm button's callback data carries it, like `mi:confirm:3f9c0a1b2d4e`. Confirm runs these checks before it writes anything:
+
+1. The button's operation ID must match the session's. A Confirm from an older screen, such as one left over after `/cancel`, replies that the operation expired. It writes nothing and leaves the current session alone. A button with no ID, sent before this change, is treated the same way.
+2. For `/movein`, the charges are worked out again. They depend on whether today (UTC) is on or after the 15th. If they differ from the ones the screen showed, the bot shows the screen again with the new charges and a new Confirm button. Nothing is saved until you confirm that screen.
+3. The user's `ConfirmLock` Durable Object (`src/confirm-lock.ts`) must hand out the operation. It does this once per operation ID, even when two taps arrive at the same moment. A later tap replies that the save is already in progress or has finished, and says to check Airtable before trying again. If the lock can't be reached, nothing is written and the reply says to tap Confirm again.
+
+After the claim, the session step is set to `saving`, so Cancel and the move-in and move-out text handlers know a save is running.
+
+KV alone can't stop two taps that arrive together. Its `get` and `put` are separate calls, and KV reads can be stale for up to a minute. Two webhook requests could both read the confirm step and both save.
 
 The Airtable client in this Worker uses a 5 second timeout per request (`src/airtable.ts`). The grammY webhook handler waits up to 50 seconds (`src/index.ts`), so a slow Airtable cannot cut off a Confirm partway through. grammY's own default is 10 seconds.
 
@@ -175,6 +184,14 @@ Set with `npx wrangler secret put <NAME>` from `payment-worker/`.
 | Binding | Purpose |
 |---|---|
 | `SESSION_KV` | Wizard session state, 1hr TTL per user |
+
+### Durable Object
+
+| Binding | Class | Purpose |
+|---|---|---|
+| `CONFIRM_LOCK` | `ConfirmLock` | Lets one Confirm tap per operation write to Airtable. One instance per Telegram user. |
+
+`wrangler.toml` declares the binding for production and for `env.staging`, because environments don't inherit bindings. The `v1` migration (`new_sqlite_classes = ["ConfirmLock"]`) is top-level, and environments do inherit it. SQLite storage is the only Durable Object storage the Workers Free plan allows. `wrangler deploy` applies the migration on the first deploy. No setup step is needed.
 
 ## Setup
 
@@ -277,11 +294,13 @@ Test coverage includes:
 | Unit | `test/session.test.ts` | KV session get/set/clear and TTL |
 | Unit | `test/auth.test.ts` | webhook secret fail-closed behavior |
 | Unit | `test/timeouts.test.ts` | the 50 second webhook timeout and the 5 second Airtable request timeout |
+| Unit | `test/confirm.test.ts` | operation IDs, Confirm callback matching, and the claimed, taken and failed results |
+| Integration | `test/integration/confirm-lock.test.ts` | `ConfirmLock` gives one claim per operation, including many claims at once, and keeps users apart |
 | Integration | `test/integration/reminder.test.ts` | `/reminder` output, authorization, and session non-mutation |
 | Integration | `test/integration/webhook.test.ts` | GET banner and webhook secret rejection |
-| Integration | `test/integration/wizard.test.ts` | full wizard path, invalid amount, cancel, and Payment payload |
-| Integration | `test/integration/moveout.test.ts` | `/moveout` end dates, charges-after-end-date warning, room Vacant rule, stale and double confirm, and partial-failure replies |
-| Integration | `test/integration/movein.test.ts` | `/movein` new and existing tenants, first-payment options, written payloads, occupied-room warning, handover from `/moveout`, and partial-failure replies |
+| Integration | `test/integration/wizard.test.ts` | full wizard path, invalid amount, cancel, Payment payload, two Confirm taps at once, and a Confirm from an older screen |
+| Integration | `test/integration/moveout.test.ts` | `/moveout` end dates, charges-after-end-date warning, room Vacant rule, stale, double and simultaneous confirms, and partial-failure replies |
+| Integration | `test/integration/movein.test.ts` | `/movein` new and existing tenants, first-payment options, written payloads, occupied-room warning, handover from `/moveout`, simultaneous and older-screen confirms, charges that changed after the confirm screen, and partial-failure replies |
 | Helper | `test/integration/helpers.ts` | shared Telegram update builders, Airtable and Telegram mocks, and table IDs for the integration tests |
 
 Run from the repo root:
@@ -303,6 +322,7 @@ Staging config:
 |---|---|
 | `AIRTABLE_BASE_ID` | `appzRYFa1yW5pQDEW` |
 | `SESSION_KV` | `17e24003884e454dbd96d81acc37bf2d` |
+| `CONFIRM_LOCK` | Durable Object `ConfirmLock`, created by the first staging deploy |
 | Telegram bot | `@ChwqueudciBot` |
 
 Staging secrets are set separately:
@@ -330,6 +350,8 @@ src/
   reminder.ts    -- Telegram Markdown reminder formatting and message splitting
   format.ts     -- amount/date parsing, Melbourne dates, HTTP status extraction, and display formatting
   session.ts    -- KV session helpers
+  confirm.ts    -- operation IDs for confirm screens and the Confirm claim
+  confirm-lock.ts -- ConfirmLock Durable Object: one claim per operation
   auth.ts       -- Telegram webhook secret guard
   types.ts      -- Env, WizardSession and flow step types
 test/
@@ -337,7 +359,11 @@ test/
   format.test.ts
   session.test.ts
   timeouts.test.ts
+  confirm.test.ts
+  stubs/
+    cloudflare-workers.ts -- Node stand-in so unit tests can import the Durable Object class
   integration/
+    confirm-lock.test.ts
     webhook.test.ts
     reminder.test.ts
     wizard.test.ts
@@ -350,7 +376,7 @@ wrangler.toml
 tsconfig.json
 ```
 
-`payment-worker/src/airtable.ts` has been removed; Airtable I/O belongs in `@rent/airtable-client`.
+`src/airtable.ts` only builds the shared client with this Worker's timeout. Airtable I/O belongs in `@rent/airtable-client`.
 
 ## Operational Notes
 
