@@ -193,6 +193,7 @@ describe('payment wizard', () => {
   it('keeps the session unchanged for an invalid amount', async () => {
     const telegramPayloads = stubTelegram(1);
     const seeded = {
+      flow: 'pay',
       step: 'enter_amount',
       tenancyId: 'recT1',
       tenancyLabel: '6B Sun Peng',
@@ -213,6 +214,7 @@ describe('payment wizard', () => {
   it('keeps the session unchanged for an invalid manual date', async () => {
     const telegramPayloads = stubTelegram(1);
     const seeded = {
+      flow: 'pay',
       step: 'enter_date',
       tenancyId: 'recT1',
       tenancyLabel: '6B Sun Peng',

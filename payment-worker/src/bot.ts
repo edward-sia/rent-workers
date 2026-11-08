@@ -1,7 +1,7 @@
 import { ChargeSchema, PaymentSchema, TABLES, TenancySchema } from '@rent/airtable-client';
 import { Bot, InlineKeyboard, type Context } from 'grammy';
 import { airtableFor } from './airtable';
-import { CLAIM_FAILED, claimConfirm, confirmData, confirmPattern, newOpId } from './confirm';
+import { claimSave, confirmData, confirmPattern, newOpId } from './confirm';
 import {
   escapeTelegramMarkdown,
   escapeTelegramMarkdownUrl,
@@ -18,7 +18,7 @@ import { handleMoveOutText, registerMoveOut } from './moveout';
 import { fetchReminderBuckets, listOutstandingChargesForTenancy } from './outstanding';
 import { formatReminderMessages } from './reminder';
 import { clearSession, getSession, setSession } from './session';
-import type { Env, WizardSession } from './types';
+import type { Env, WizardSession, WizardStep } from './types';
 
 const PAY_EXPIRED = '❌ Session expired. Use /pay to start again.';
 /** Plain text. */
@@ -59,6 +59,18 @@ function confirmationText(session: WizardSession): string {
     `📅 *Date:*     ${escapeTelegramMarkdown(String(session.date))}\n` +
     `📊 *Outstanding after:* ${escapeTelegramMarkdown(formatAUD(remaining))}`
   );
+}
+
+/**
+ * The payment session when it is at `step`. Otherwise says "expired" and returns null.
+ * Every /pay button after the tenant list goes through this, so a button from an earlier
+ * screen can't change a session that has moved on, and nothing moves one out of `saving`.
+ */
+async function paySessionAt(ctx: Context, env: Env, step: WizardStep): Promise<WizardSession | null> {
+  const session = await getSession(ctx.from!.id, env.SESSION_KV);
+  if (session.flow === 'pay' && session.step === step) return session;
+  await ctx.editMessageText(PAY_EXPIRED);
+  return null;
 }
 
 export function createBot(env: Env): Bot {
@@ -190,6 +202,7 @@ export function createBot(env: Env): Bot {
 
   bot.callbackQuery('back:pay', async (ctx) => {
     await ctx.answerCallbackQuery();
+    if (!(await paySessionAt(ctx, env, 'select_charge'))) return;
     await clearSession(ctx.from!.id, env.SESSION_KV);
     await ctx.editMessageText('Use /pay to start again.');
   });
@@ -199,17 +212,24 @@ export function createBot(env: Env): Bot {
     if (!chargeId) return;
     await ctx.answerCallbackQuery();
 
-    const session = await getSession(ctx.from!.id, env.SESSION_KV);
+    const session = await paySessionAt(ctx, env, 'select_charge');
+    if (!session) return;
     const chargeRecords = await airtable.fetchAll(
       TABLES.CHARGES,
       ChargeSchema,
       {
-        fields: ['Label', 'Balance'],
+        fields: ['Label', 'Balance', 'Tenancy'],
         filterByFormula: `RECORD_ID() = "${chargeId}"`,
       },
     );
-    const chargeLabel = chargeRecords[0]?.fields.Label ?? chargeId;
-    const chargeBalance = chargeRecords[0]?.fields.Balance ?? 0;
+    const charge = chargeRecords[0]?.fields;
+    // A charge list left over from another tenant's /pay must not attach its charge here.
+    if (!charge || !session.tenancyId || !charge.Tenancy?.includes(session.tenancyId)) {
+      await ctx.editMessageText(PAY_EXPIRED);
+      return;
+    }
+    const chargeLabel = charge.Label;
+    const chargeBalance = charge.Balance ?? 0;
 
     await setSession(ctx.from!.id, {
       ...session,
@@ -233,8 +253,9 @@ export function createBot(env: Env): Bot {
     if (!method) return;
     await ctx.answerCallbackQuery();
 
-    const session = await getSession(ctx.from!.id, env.SESSION_KV);
-    await setSession(ctx.from!.id, { ...session, flow: 'pay', step: 'select_date', method }, env.SESSION_KV);
+    const session = await paySessionAt(ctx, env, 'select_method');
+    if (!session) return;
+    await setSession(ctx.from!.id, { ...session, step: 'select_date', method }, env.SESSION_KV);
 
     const today = melbourneDateISO();
     const yesterday = melbourneYesterdayISO();
@@ -254,9 +275,12 @@ export function createBot(env: Env): Bot {
     if (!value) return;
     await ctx.answerCallbackQuery();
 
-    const session = await getSession(ctx.from!.id, env.SESSION_KV);
+    // The date buttons stay on screen under the confirm screen. Only `select_date` takes them,
+    // so they can't reopen a payment that is already being saved.
+    const session = await paySessionAt(ctx, env, 'select_date');
+    if (!session) return;
     if (value === 'manual') {
-      await setSession(ctx.from!.id, { ...session, flow: 'pay', step: 'enter_date' }, env.SESSION_KV);
+      await setSession(ctx.from!.id, { ...session, step: 'enter_date' }, env.SESSION_KV);
       await ctx.editMessageText(
         'Enter date in `YYYY-MM-DD` or `DD/MM/YYYY` format:',
         { parse_mode: 'Markdown' },
@@ -264,7 +288,7 @@ export function createBot(env: Env): Bot {
       return;
     }
 
-    await sendConfirmation(ctx, env, { ...session, flow: 'pay', step: 'confirm', date: value });
+    await sendConfirmation(ctx, env, { ...session, step: 'confirm', date: value });
   });
 
   bot.callbackQuery(confirmPattern('confirm:yes'), async (ctx) => {
@@ -290,11 +314,7 @@ export function createBot(env: Env): Bot {
     }
 
     // Only one tap per operation gets past this, even when two arrive at once.
-    const claim = await claimConfirm(env, userId, opId, 'pay');
-    if (claim !== 'claimed') {
-      await ctx.editMessageText(claim === 'taken' ? PAY_SAVING : CLAIM_FAILED);
-      return;
-    }
+    if (!(await claimSave(ctx, env, opId, 'pay', PAY_SAVING))) return;
     await setSession(userId, { ...session, step: 'saving' }, env.SESSION_KV);
 
     try {
@@ -342,11 +362,12 @@ export function createBot(env: Env): Bot {
   bot.callbackQuery('confirm:no', async (ctx) => {
     await ctx.answerCallbackQuery();
     const session = await getSession(ctx.from!.id, env.SESSION_KV);
-    if (session.flow === 'pay' && session.step === 'saving') {
-      await ctx.editMessageText(PAY_SAVING);
+    if (session.step === 'saving') {
+      await ctx.editMessageText(session.flow === 'pay' ? PAY_SAVING : PAY_EXPIRED);
       return;
     }
-    await clearSession(ctx.from!.id, env.SESSION_KV);
+    // An old payment's Cancel must not clear a move-in or move-out.
+    if (session.flow === 'pay') await clearSession(ctx.from!.id, env.SESSION_KV);
     await ctx.editMessageText('❌ Cancelled. Use /pay to start again.');
   });
 
@@ -358,7 +379,7 @@ export function createBot(env: Env): Bot {
     if (await handleMoveInText(ctx, env, session, text)) return;
     if (await handleMoveOutText(ctx, env, session, text)) return;
 
-    if (session.step === 'enter_amount') {
+    if (session.flow === 'pay' && session.step === 'enter_amount') {
       const amount = parseAmount(text);
       if (amount === null) {
         await ctx.reply(
@@ -380,7 +401,7 @@ export function createBot(env: Env): Bot {
       return;
     }
 
-    if (session.step === 'enter_date') {
+    if (session.flow === 'pay' && session.step === 'enter_date') {
       const date = parseDate(text);
       if (!date) {
         await ctx.reply(

@@ -236,11 +236,11 @@ Both commands only write to Airtable after you tap Confirm. The date buttons, th
 
 If tapping Confirm or Cancel replies that the payment, move-out or move-in is "already being saved, or the save has finished", that operation's first Confirm got the save. It is still running, or it stopped partway. Wait a minute, then check Airtable for what was written before you start the command again. Two taps can't both save. The `ConfirmLock` Durable Object gives each confirm screen's save to one tap only.
 
-If Confirm replies that the operation "was already saved or has expired", the button belongs to an older confirm screen. Examples are a move-in you cancelled, or a screen from before the bot was last deployed. Nothing was written. Use the newest confirm screen, or start the command again.
+If Confirm, or a button from an earlier step, replies that the operation "was already saved or has expired" (for `/pay`: "Session expired"), the button belongs to an older screen. Examples are a move-in you cancelled, or a screen from before the bot was last deployed. Nothing was written. Use the newest confirm screen, or start the command again.
 
 If `/movein` shows the confirm screen again with "The charges changed since you saw this screen", the monthly charge run (00:00 UTC on the 15th) happened after the screen was shown. Next month's charge is now added. Nothing was saved. Check the new list and confirm again.
 
-If Confirm replies "Could not start the save. Nothing was written.", the bot couldn't reach its `ConfirmLock` Durable Object. Tap Confirm again. If it keeps happening, look for `claim Confirm` in the Worker logs.
+If Confirm sends "Could not start the save. Nothing was written.", the bot couldn't reach its `ConfirmLock` Durable Object. The confirm screen above that message stays as it was. Tap its Confirm again. If it keeps happening, look for `claim Confirm` in the Worker logs.
 
 ### `/moveout`
 

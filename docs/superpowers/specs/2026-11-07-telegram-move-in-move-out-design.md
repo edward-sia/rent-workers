@@ -225,6 +225,11 @@ On Confirm, the bot first writes `step: 'saving'` to KV and then does the Airtab
 
 The `saving` step stays, so Cancel and typed text still see that a save is running.
 
+**Revised after the second PR review (2026-11-08).** Two more gaps:
+
+- `/pay`'s charge, method and date buttons didn't check the step. Its date buttons stay under the confirm screen, so tapping one during a slow save moved the session from `saving` back to `confirm` with a new operation ID. That screen's Confirm then recorded the same payment again. Every button now works only at its own step, and the charge button must belong to the session's tenancy. `/pay`'s Cancel now clears only a `/pay` session.
+- When the lock couldn't be reached, the error replaced the confirm screen and removed its buttons, though it said to tap Confirm again. The error is now a new message, and the confirm screen keeps its buttons.
+
 ### `scripts/check-airtable-schema.ts`
 
 - Add Rooms and Tenants fields, plus the new Tenancies fields, to `REQUIRED_FIELDS`.

@@ -1,3 +1,4 @@
+import type { Context } from 'grammy';
 import { logAirtableFailure } from './format';
 import type { Env } from './types';
 
@@ -38,5 +39,27 @@ export async function claimConfirm(env: Env, userId: number, opId: string, flow:
   }
 }
 
-/** Plain text. Shown when the lock can't be reached. The session stays at the confirm step. */
-export const CLAIM_FAILED = '⚠️ Could not start the save. Nothing was written. Tap Confirm again.';
+/** Plain text. Sent as a new message, so the confirm screen above it keeps its buttons. */
+export const CLAIM_FAILED = '⚠️ Could not start the save. Nothing was written. Tap Confirm above to try again.';
+
+/**
+ * Claims the save for the tapped Confirm. Returns true when this tap may write.
+ *
+ * - `taken`: another tap is saving this operation. The screen becomes `savingText`, and its
+ *   buttons go, because tapping again can't help.
+ * - `failed`: the confirm screen stays as it is, buttons included, and the error goes in a
+ *   new message. The session is still at its confirm step, so the same Confirm works again.
+ */
+export async function claimSave(
+  ctx: Context,
+  env: Env,
+  opId: string,
+  flow: string,
+  savingText: string,
+): Promise<boolean> {
+  const claim = await claimConfirm(env, ctx.from!.id, opId, flow);
+  if (claim === 'claimed') return true;
+  if (claim === 'taken') await ctx.editMessageText(savingText);
+  else await ctx.reply(CLAIM_FAILED);
+  return false;
+}

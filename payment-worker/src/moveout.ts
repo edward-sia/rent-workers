@@ -9,7 +9,7 @@ import {
 import { chargesAfter, checkEndDate, endOfMonthISO, owedThrough } from '@rent/tenancy';
 import { Bot, InlineKeyboard, type Context } from 'grammy';
 import { airtableFor } from './airtable';
-import { CLAIM_FAILED, claimConfirm, confirmData, confirmPattern, newOpId } from './confirm';
+import { claimSave, confirmData, confirmPattern, newOpId } from './confirm';
 import {
   escapeTelegramMarkdown as esc,
   escapeTelegramMarkdownUrl,
@@ -293,11 +293,7 @@ export function registerMoveOut(bot: Bot, env: Env): void {
     }
 
     // Only one tap per operation gets past this, even when two arrive at once.
-    const claim = await claimConfirm(env, userId, opId, 'moveout');
-    if (claim !== 'claimed') {
-      await ctx.editMessageText(claim === 'taken' ? SAVING : CLAIM_FAILED);
-      return;
-    }
+    if (!(await claimSave(ctx, env, opId, 'moveout', SAVING))) return;
     // `saving` makes Cancel and typed text say "already saving" while the writes run.
     await setSession(userId, { ...session, step: 'saving' }, env.SESSION_KV);
     await saveMoveOut(ctx, env, session);

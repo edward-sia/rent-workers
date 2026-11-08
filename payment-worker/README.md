@@ -107,7 +107,9 @@ Every confirm screen (`/pay`, `/movein` and `/moveout`) gets a new 12-character 
 
 1. The button's operation ID must match the session's. A Confirm from an older screen, such as one left over after `/cancel`, replies that the operation expired. It writes nothing and leaves the current session alone. A button with no ID, sent before this change, is treated the same way.
 2. For `/movein`, the charges are worked out again. They depend on whether today (UTC) is on or after the 15th. If they differ from the ones the screen showed, the bot shows the screen again with the new charges and a new Confirm button. Nothing is saved until you confirm that screen.
-3. The user's `ConfirmLock` Durable Object (`src/confirm-lock.ts`) must hand out the operation. It does this once per operation ID, even when two taps arrive at the same moment. A later tap replies that the save is already in progress or has finished, and says to check Airtable before trying again. If the lock can't be reached, nothing is written and the reply says to tap Confirm again.
+3. The user's `ConfirmLock` Durable Object (`src/confirm-lock.ts`) must hand out the operation. It does this once per operation ID, even when two taps arrive at the same moment. A later tap replies that the save is already in progress or has finished, and says to check Airtable before trying again. If the lock can't be reached, nothing is written. The confirm screen keeps its buttons, and a new message says to tap Confirm again.
+
+The buttons from earlier steps stay in the chat. For example, `/pay`'s date buttons stay under the confirm screen. Each of those buttons works only while the session is at its own step. Otherwise it replies that the operation expired and changes nothing. So a button from an earlier screen can't reopen an operation that is being saved and give it a second Confirm. Only `/pay`'s tenant list and `/movein`'s room list start a new operation.
 
 After the claim, the session step is set to `saving`, so Cancel and the move-in and move-out text handlers know a save is running.
 
@@ -296,6 +298,8 @@ Test coverage includes:
 | Unit | `test/timeouts.test.ts` | the 50 second webhook timeout and the 5 second Airtable request timeout |
 | Unit | `test/confirm.test.ts` | operation IDs, Confirm callback matching, and the claimed, taken and failed results |
 | Integration | `test/integration/confirm-lock.test.ts` | `ConfirmLock` gives one claim per operation, including many claims at once, and keeps users apart |
+| Integration | `test/integration/saving-session.test.ts` | every button and some typed text, against a `saving` session of each flow, leave the session, Airtable and the shown buttons unchanged |
+| Integration | `test/integration/session-steps.test.ts` | an earlier `/pay` date button during a slow save, a charge button from another tenant's list, and a lock failure that keeps the confirm screen's buttons in all three flows |
 | Integration | `test/integration/reminder.test.ts` | `/reminder` output, authorization, and session non-mutation |
 | Integration | `test/integration/webhook.test.ts` | GET banner and webhook secret rejection |
 | Integration | `test/integration/wizard.test.ts` | full wizard path, invalid amount, cancel, Payment payload, two Confirm taps at once, and a Confirm from an older screen |
@@ -364,6 +368,8 @@ test/
     cloudflare-workers.ts -- Node stand-in so unit tests can import the Durable Object class
   integration/
     confirm-lock.test.ts
+    saving-session.test.ts
+    session-steps.test.ts
     webhook.test.ts
     reminder.test.ts
     wizard.test.ts
