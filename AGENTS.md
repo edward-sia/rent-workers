@@ -23,3 +23,5 @@ Keep due-date, charge and tenancy rules in `packages/tenancy`; it stays free of 
 A Confirm's Airtable writes must fit inside the bot's 50 s webhook timeout. `payment-worker/src/budget.ts` adds up the slowest move-in Confirm, and a test checks it. Update it when a Confirm gains an Airtable call.
 
 When behavior, configuration, secrets, commands, file layout, or operations change, update the relevant README plus `docs/runbook.md` in the same change. Keep `CLAUDE.md` aligned with this file when adding agent-facing instructions.
+
+Keep schema-check reports in GitHub Actions and Discord limited to a fixed description and the HTTP status when available. Field-level drift details belong in local output.
