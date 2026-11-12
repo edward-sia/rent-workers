@@ -78,7 +78,7 @@ The repo includes `scripts/check-airtable-schema.ts`, which compares required Ai
 AIRTABLE_TOKEN=... AIRTABLE_BASE_ID=app6He8xRaUzNBTDl npm run check:schema
 ```
 
-The GitHub `schema-check` workflow runs the same check nightly and alerts Discord when fields drift.
+The nightly GitHub workflow logs a short summary and sends it to Discord on failure. The summary includes the HTTP status when Airtable responds. Run the command locally for field-level drift details.
 
 The check also confirms that Rooms `Status` has the options `Occupied` and `Vacant`, and that Tenancies `Frequency` has `Monthly`.
 

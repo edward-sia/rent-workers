@@ -158,7 +158,7 @@ Check:
 
 1. The workflow or local command has `AIRTABLE_TOKEN` and `AIRTABLE_BASE_ID`.
 2. The Airtable PAT can read the base metadata/records needed by `scripts/check-airtable-schema.ts`.
-3. The output diff for renamed, deleted, or type-changed fields.
+3. GitHub logs and Discord show a short description and the Airtable HTTP status when available. A configuration or network failure has no HTTP status. For drift, run `npm run check:schema` locally with a metadata-readable token to see the affected fields. Keep that detailed output local.
 
 The check covers Tenancies, Charges, Payments, Rooms and Tenants fields. It also checks that Rooms `Status` has the select options `Occupied` and `Vacant`, that Tenancies `Frequency` has the option `Monthly`, and that Charges `Type`, when it is a single select, has the options `Rent` and `Bond`. If someone renames one of those options in Airtable, `/movein` and `/moveout` would fail to write, so this check fails first.
 
