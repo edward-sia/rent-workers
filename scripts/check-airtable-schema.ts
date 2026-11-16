@@ -1,3 +1,4 @@
+import { appendFileSync } from 'node:fs';
 import { TABLES } from '../packages/airtable-client/src/tables';
 
 interface AirtableField {
@@ -101,24 +102,6 @@ function isAirtableMetadataResponse(value: unknown): value is AirtableMetadataRe
   return Array.isArray(tables) && tables.every(isAirtableTable);
 }
 
-async function fetchSchema(token: string, baseId: string): Promise<AirtableMetadataResponse> {
-  const response = await fetch(
-    `https://api.airtable.com/v0/meta/bases/${baseId}/tables`,
-    { headers: { Authorization: `Bearer ${token}` } },
-  );
-
-  if (!response.ok) {
-    throw new Error(`Schema fetch failed: ${response.status} ${await response.text()}`);
-  }
-
-  const data: unknown = await response.json();
-  if (!isAirtableMetadataResponse(data)) {
-    throw new Error('Schema fetch failed: unexpected metadata response shape');
-  }
-
-  return data;
-}
-
 function findSchemaDrift(tables: AirtableTable[]): string[] {
   const tablesById = new Map(tables.map((table) => [table.id, table]));
   const problems: string[] = [];
@@ -160,34 +143,60 @@ function findSchemaDrift(tables: AirtableTable[]): string[] {
   return problems;
 }
 
-async function main(): Promise<void> {
+interface CheckResult {
+  exitCode: 0 | 1 | 2;
+  summary: string;
+  problems?: string[];
+}
+
+async function checkSchema(): Promise<CheckResult> {
   const token = process.env.AIRTABLE_TOKEN;
   const baseId = process.env.AIRTABLE_BASE_ID;
-
   if (!token || !baseId) {
-    console.error('Missing AIRTABLE_TOKEN or AIRTABLE_BASE_ID');
-    process.exit(2);
+    return { exitCode: 2, summary: 'Schema check configuration is missing.' };
   }
 
-  let metadata: AirtableMetadataResponse;
+  let response: Response;
   try {
-    metadata = await fetchSchema(token, baseId);
-  } catch (error) {
-    const message = error instanceof Error ? error.message : String(error);
-    console.error(message);
-    process.exit(2);
+    response = await fetch(
+      `https://api.airtable.com/v0/meta/bases/${baseId}/tables`,
+      { headers: { Authorization: `Bearer ${token}` } },
+    );
+  } catch {
+    return { exitCode: 2, summary: 'Could not reach Airtable.' };
   }
 
-  const problems = findSchemaDrift(metadata.tables);
-  if (problems.length > 0) {
-    console.log('Schema drift detected:');
-    for (const problem of problems) {
-      console.log(`  - ${problem}`);
+  const status = `HTTP ${response.status}`;
+  if (!response.ok) {
+    return { exitCode: 2, summary: `${status}: Airtable metadata request failed.` };
+  }
+
+  try {
+    const metadata: unknown = await response.json();
+    if (isAirtableMetadataResponse(metadata)) {
+      const problems = findSchemaDrift(metadata.tables);
+      if (problems.length > 0) {
+        return { exitCode: 1, summary: `${status}: Airtable schema drift detected.`, problems };
+      }
+      return { exitCode: 0, summary: `${status}: Airtable schema OK.` };
     }
-    process.exit(1);
+  } catch {
+    // Parsing and validation errors can contain upstream data.
   }
+  return { exitCode: 2, summary: `${status}: Invalid Airtable metadata.` };
+}
 
-  console.log('Airtable schema OK');
+async function main(): Promise<void> {
+  const result = await checkSchema();
+  if (process.argv.includes('--github-actions')) {
+    const output = process.env.GITHUB_OUTPUT;
+    if (!output) throw new Error('GitHub Actions output is unavailable.');
+    appendFileSync(output, `summary=${result.summary}\n`);
+  } else {
+    console.log(result.summary);
+    for (const problem of result.problems ?? []) console.log(`  - ${problem}`);
+  }
+  process.exitCode = result.exitCode;
 }
 
 void main();

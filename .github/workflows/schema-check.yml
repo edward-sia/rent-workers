@@ -19,18 +19,17 @@ jobs:
         env:
           AIRTABLE_TOKEN: ${{ secrets.AIRTABLE_TOKEN }}
           AIRTABLE_BASE_ID: ${{ secrets.AIRTABLE_BASE_ID }}
-        run: |
-          set +e
-          npm run check:schema > /tmp/schema-output.txt 2>&1
-          exit_code=$?
-          cat /tmp/schema-output.txt
-          echo "exit_code=$exit_code" >> "$GITHUB_OUTPUT"
-      - name: Notify Discord on drift
-        if: steps.check.outputs.exit_code != '0'
+        run: npm run --silent check:schema -- --github-actions >/dev/null 2>&1
+      - name: Report schema check
+        if: ${{ !cancelled() && (steps.check.outcome == 'success' || steps.check.outcome == 'failure') }}
         env:
+          SUMMARY: ${{ steps.check.outputs.summary || 'Schema check could not complete.' }}
+          OUTCOME: ${{ steps.check.outcome }}
           DISCORD_WEBHOOK_URL: ${{ secrets.DISCORD_WEBHOOK_URL }}
         run: |
-          body=$(tail -c 1500 /tmp/schema-output.txt)
-          jq -n --arg content "Airtable schema drift detected\n\n\`\`\`\n$body\n\`\`\`" '{content: $content}' |
-            curl -X POST -H "Content-Type: application/json" -d @- "$DISCORD_WEBHOOK_URL"
-          exit 1
+          printf '%s\n' "$SUMMARY"
+          if [ "$OUTCOME" = failure ]; then
+            jq -n --arg content "$SUMMARY" '{content: $content}' |
+              curl --fail --silent --output /dev/null \
+                -H 'Content-Type: application/json' --data-binary @- "$DISCORD_WEBHOOK_URL"
+          fi

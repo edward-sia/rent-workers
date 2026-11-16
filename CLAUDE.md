@@ -15,3 +15,5 @@ Use the same repo conventions as `AGENTS.md`.
 - For production CI/CD, read `docs/production-cicd.md` before changing production deployment workflows or top-level Wrangler production config.
 - Update README and `docs/runbook.md` alongside behavior/config changes.
 - Verify with `npm run typecheck`, `npm run lint`, `npm run test`, `npm run build`, `npm run build:staging`, and `npm run build:production` when the change touches deployment config.
+
+Keep schema-check reports in GitHub Actions and Discord limited to a fixed description and the HTTP status when available. Field-level drift details belong in local output.
