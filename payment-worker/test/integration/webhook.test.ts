@@ -82,3 +82,34 @@ describe('webhook auth', () => {
     expect(res.status).toBe(200);
   });
 });
+
+it('acknowledges a signed WhatsApp reminder in workerd and recognizes a redelivery', async () => {
+  const { env } = await import('cloudflare:test');
+  const { default: worker } = await import('../../src/index');
+  const bindings = {
+    ...env,
+    WHATSAPP_GRAPH_VERSION: 'v25.0', WHATSAPP_PHONE_NUMBER_ID: '123456',
+    WHATSAPP_ALLOWED_SENDERS: '61400000001', WHATSAPP_ACCESS_TOKEN: 'access',
+    WHATSAPP_APP_SECRET: 'test-meta-secret',
+  } as unknown as import('../../src/types').Env;
+  const body = JSON.stringify({ object: 'whatsapp_business_account', entry: [{ changes: [{
+    field: 'messages', value: { messaging_product: 'whatsapp', metadata: { phone_number_id: '123456' },
+      messages: [{ id: 'wamid.test', type: 'text', from: '61400000001',
+        timestamp: String(Math.floor(Date.now() / 1000)), text: { body: 'reminder' } }] },
+  }] }] });
+  const encoder = new TextEncoder();
+  const key = await crypto.subtle.importKey('raw', encoder.encode('test-meta-secret'),
+    { name: 'HMAC', hash: 'SHA-256' }, false, ['sign']);
+  const mac = await crypto.subtle.sign('HMAC', key, encoder.encode(body));
+  const hex = Array.from(new Uint8Array(mac), byte => byte.toString(16).padStart(2, '0')).join('');
+  fetchMock.get('https://api.airtable.com').intercept({ path: /^\/v0\/appTEST\//, method: 'GET' })
+    .reply(200, { records: [] }).times(2);
+  fetchMock.get('https://graph.facebook.com').intercept({ path: '/v25.0/123456/messages', method: 'POST' })
+    .reply(200, { messages: [{ id: 'wamid.sent' }] });
+  for (let delivery = 0; delivery < 2; delivery++) {
+    const res = await worker.fetch(new Request('https://worker.test/webhooks/whatsapp', {
+      method: 'POST', body, headers: { 'X-Hub-Signature-256': 'sha256=' + hex },
+    }), bindings);
+    expect(res.status).toBe(200);
+  }
+});

@@ -21,6 +21,8 @@ flowchart TD
 
 For example, if December rent is due on the 5th, the November 15 run creates the charge. On December 1, use `/reminder` to see it. When the tenant pays, use `/pay` to record the payment.
 
+In the WhatsApp staging pilot, send `reminder` to the Meta test number for the same outstanding-charge report. Each configured operator receives their reply in a private chat. [Set up the pilot](./docs/runbook.md#whatsapp-reminder-pilot).
+
 ## Working on the repo
 
 Use Node.js 22. From the repo root, run `npm ci` to install dependencies. Run `npm run typecheck`, `npm run lint`, `npm test`, and `npm run build` to check your changes.

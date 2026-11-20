@@ -10,13 +10,14 @@ const TELEGRAM_SAFE_MESSAGE_LENGTH = 3900;
 
 export interface FormatReminderOptions {
   maxMessageLength?: number;
+  channel?: 'telegram' | 'whatsapp';
 }
 
 export function formatReminderMessages(
   buckets: ReminderBuckets,
   options: FormatReminderOptions = {},
 ): string[] {
-  const maxMessageLength = options.maxMessageLength ?? TELEGRAM_SAFE_MESSAGE_LENGTH;
+  const maxMessageLength = options.maxMessageLength ?? (options.channel === 'whatsapp' ? 4096 : TELEGRAM_SAFE_MESSAGE_LENGTH);
   const blocks: string[] = [];
 
   addSection(blocks, 'Pay now', buckets.payNowTotal, groupReminderChargesByTenant(buckets.payNow));
@@ -26,7 +27,8 @@ export function formatReminderMessages(
     return ['No overdue payments or payments due in the next 14 days.'];
   }
 
-  return splitBlocks(blocks, maxMessageLength);
+  const rendered = options.channel === 'whatsapp' ? blocks : blocks.map(escapeTelegramMarkdown);
+  return splitBlocks(rendered, maxMessageLength);
 }
 
 function addSection(
@@ -37,7 +39,7 @@ function addSection(
 ): void {
   if (groups.length === 0) return;
 
-  blocks.push(`${title} - subtotal ${escapeTelegramMarkdown(formatAUD(total))}`);
+  blocks.push(`${title} - subtotal ${formatAUD(total)}`);
   for (const group of groups) {
     blocks.push(formatTenantGroup(group));
   }
@@ -45,14 +47,14 @@ function addSection(
 
 function formatTenantGroup(group: ReminderTenantGroup): string {
   const lines = [
-    `${escapeTelegramMarkdown(group.tenantLabel)} - subtotal ${escapeTelegramMarkdown(formatAUD(group.subtotal))}`,
+    `${group.tenantLabel} - subtotal ${formatAUD(group.subtotal)}`,
     ...group.charges.map(formatChargeRow),
   ];
   return lines.join('\n');
 }
 
 function formatChargeRow(charge: ReminderCharge): string {
-  return `• ${escapeTelegramMarkdown(charge.rowLabel)} · ${escapeTelegramMarkdown(formatAUD(charge.balance))}`;
+  return `• ${charge.rowLabel} · ${formatAUD(charge.balance)}`;
 }
 
 function splitBlocks(blocks: string[], maxLength: number): string[] {
@@ -88,6 +90,18 @@ function splitLargeBlock(block: string, maxLength: number): string[] {
   let current = '';
 
   for (const line of lines) {
+    if (line.length > maxLength) {
+      if (current) chunks.push(current);
+      current = '';
+      for (const character of line) {
+        if (current.length + character.length > maxLength && current) {
+          chunks.push(current);
+          current = '';
+        }
+        current += character;
+      }
+      continue;
+    }
     const next = current ? `${current}\n${line}` : line;
     if (next.length > maxLength && current) {
       chunks.push(current);

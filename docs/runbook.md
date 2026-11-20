@@ -210,6 +210,29 @@ curl "https://api.telegram.org/bot$TELEGRAM_BOT_TOKEN/setWebhook" \
 
 Then check Cloudflare -> `payment-bot` -> Logs. Repeated 401s from random clients can be ignored unless they come from Telegram after webhook registration.
 
+## WhatsApp reminder pilot
+
+1. In the Meta developer dashboard, create an app with the WhatsApp use case. Select the supplied test business number and add and verify your own WhatsApp number as a test recipient. Keep the **phone number ID** for the test number. [Meta setup guide](https://developers.facebook.com/documentation/business-messaging/whatsapp/get-started/)
+2. Set these secrets on **payment-bot-staging**. From `payment-worker/`, run `npx wrangler secret put NAME --env staging` once per row. Enter each value at the prompt.
+
+   | Name | Value |
+   |---|---|
+   | `WHATSAPP_PHONE_NUMBER_ID` | Numeric ID for Meta’s test business number |
+   | `WHATSAPP_APP_SECRET` | The Meta app secret used to verify incoming signatures |
+   | `WHATSAPP_VERIFY_TOKEN` | A random secret you choose and also enter when registering the webhook |
+   | `WHATSAPP_ACCESS_TOKEN` | Token for that number with `whatsapp_business_messaging` permission. The dashboard test token expires. For continued testing use a system user token with access to the test account. |
+   | `WHATSAPP_ALLOWED_SENDERS` | Your WhatsApp number with country code, digits only. For two operators, enter both numbers separated by a comma. |
+
+3. Deploy the pilot revision through the [staging workflow](./staging-cicd.md). In Meta’s WhatsApp configuration, enter `<STAGING_PAYMENT_BOT_URL>/webhooks/whatsapp` and the verify token. Subscribe to the `messages` field and ensure the app is subscribed to the test WhatsApp Business Account. [Meta webhook setup](https://developers.facebook.com/documentation/business-messaging/whatsapp/webhooks/create-webhook-endpoint)
+4. From your own WhatsApp, send `reminder` to the test number. Compare the totals and charge order with `/reminder` on the staging Telegram bot. For a second operator, verify their number as a test recipient and add them to the Worker allowlist. Each operator requests the same portfolio from their own direct chat. To revoke access, remove their number from the allowlist.
+5. To pause delivery, unsubscribe the app from the `messages` field. To disable the Worker route, remove the staging `WHATSAPP_GRAPH_VERSION` binding and redeploy.
+
+**Cost.** The Worker sends free-form service replies through Meta’s Cloud API within 24 hours of the request. Meta provides the test number and charges no service-message fee for these replies. Requests still use Airtable API calls, Cloudflare Worker requests, and KV operations against their existing plan quotas. [Meta pricing](https://business.whatsapp.com/products/platform-pricing/)
+
+**If the bot is silent.** A verification GET returning 403 means the mode, challenge, or token failed validation. A POST returning 401 means the signature did not match. For 503, check all staging bindings, access-token expiry, and the status-only Worker logs. A 200 with no reply is expected for status updates, unsupported commands, other bot numbers, and unlisted senders. The pilot matches the numeric sender in Meta’s `messages[].from`; events containing only a business-scoped user ID are skipped. Check the account subscription and Meta app mode if no webhook arrives. [Meta webhook troubleshooting](https://developers.facebook.com/documentation/business-messaging/whatsapp/webhooks/overview)
+
+**Retries.** The Worker records a one-day receipt in staging KV after Meta accepts all parts of a reply. Concurrent redeliveries or a failure partway through a long report can repeat a message. The reminder path only reads Airtable.
+
 ## `/reminder` output is empty or incorrect
 
 `/reminder` reads Airtable Charges and Tenancies through `@rent/airtable-client`. It includes charges with positive `Balance`, non-`Paid` status, and a `Due Date` that is either before today or from today through the next 14 days.

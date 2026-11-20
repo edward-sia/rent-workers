@@ -8,6 +8,12 @@ export interface Env {
   AIRTABLE_TOKEN: string;      // PAT: data.records:read + write
   AIRTABLE_BASE_ID: string;    // app6He8xRaUzNBTDl
   AUTHORIZED_USER_ID: string;  // your Telegram numeric user ID
+  WHATSAPP_GRAPH_VERSION?: string; // Set only in staging for the reminder pilot.
+  WHATSAPP_PHONE_NUMBER_ID?: string;
+  WHATSAPP_APP_SECRET?: string;
+  WHATSAPP_VERIFY_TOKEN?: string;
+  WHATSAPP_ACCESS_TOKEN?: string;
+  WHATSAPP_ALLOWED_SENDERS?: string;
   SESSION_KV: KVNamespace;
   CONFIRM_LOCK: DurableObjectNamespace<ConfirmLock>; // one Confirm write per operation
 }

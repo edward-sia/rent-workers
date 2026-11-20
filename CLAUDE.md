@@ -6,6 +6,8 @@ Use the same repo conventions as `AGENTS.md`.
 - Keep Airtable access in `packages/airtable-client` or existing worker modules that use it; do not add one-off Airtable fetch helpers.
 - For `charge-generator`, read `charge-generator/AGENTS.md` before changing cron behavior, Discord notifications, or Wrangler config.
 - For `payment-worker`, read `payment-worker/AGENTS.md` before changing Telegram commands, the `/pay`, `/movein` and `/moveout` flows, or the `/reminder` outstanding-payment output.
+- The staging WhatsApp pilot shares the reminder query. Check the receiving phone number ID and sender allowlist before reading Airtable.
+
 - Keep due-date, charge and tenancy rules in `packages/tenancy`; it stays free of I/O.
 - `/movein` and `/moveout` live in `payment-worker/src/movein.ts` and `moveout.ts`.
 - `/movein` records the bond as a Charges record with `Type` = `Bond` and no `Period`, written last. Never give it a `Period`: the charge generator would count it as that month's rent.
