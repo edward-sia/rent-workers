@@ -16,6 +16,8 @@ Use `npm run build:production` after changing production deploy workflows or top
 
 `payment-worker` owns the Telegram payment-recording webhook, the `/pay` wizard, the read-only due-date-sorted `/reminder` outstanding-payment summary, the `/movein` and `/moveout` flows, and its staging KV binding. Its worker-specific guidance lives in `payment-worker/AGENTS.md`.
 
+The staging WhatsApp webhook in `payment-worker/src/whatsapp.ts` serves on-demand reminders to explicitly configured senders sharing one portfolio.
+
 Keep due-date, charge and tenancy rules in `packages/tenancy`; it stays free of I/O.
 
 `/movein` and `/moveout` live in `payment-worker/src/movein.ts` and `moveout.ts`. `/movein` also records the bond as a Charges record with `Type` = `Bond` and no `Period`, written last. The charge generator treats any charge with next month's `Period` as that month's rent, so a bond must never get one.

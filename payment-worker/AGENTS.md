@@ -2,6 +2,8 @@
 
 This Worker owns the Telegram payment bot.
 
+The staging WhatsApp route in `src/whatsapp.ts` verifies the raw-body signature and receiving phone number ID, then checks each message sender before reading the shared reminder report. Reply directly to that sender. Its short-lived delivery receipts use the `whatsapp:reminder:` KV prefix.
+
 - `/pay` records tenant payments through the wizard and writes Payment records to Airtable. It lists active tenancies plus ended ones that still owe money.
 - `/movein` (`src/movein.ts`, prompts in `src/movein-view.ts`) creates a Tenant (unless one is reused), a Tenancy, the first rent Charges, sets the Room to Occupied, then creates the Bond charge when there is one. It writes in that order with no rollback. The Bond charge (`buildBondCharge` in `@rent/tenancy`) must not get a `Period`: the charge generator treats any charge with next month's `Period` as that month's rent.
 - `/moveout` (`src/moveout.ts`) sets the tenancy `End Date`. It sets the Room to Vacant only when the end date is today (Melbourne) or earlier.

@@ -2,6 +2,12 @@
 
 Cloudflare Worker running a single-operator Telegram bot for recording tenant rent payments, moving tenants in, and moving tenants out in Airtable.
 
+## WhatsApp reminder pilot
+
+In staging, send `reminder` or `/reminder` in a direct chat with the Meta test number. The Worker verifies the signed webhook, checks the receiving number and sender, reads the existing reminder buckets, and sends the report back to that sender. Each allowed operator sees the entire staging portfolio. Requests are independent of all payment wizard sessions.
+
+The route is `/webhooks/whatsapp`. The staging-only `WHATSAPP_GRAPH_VERSION` binding enables it. See the [runbook for setup, second-user access, and verification](../docs/runbook.md#whatsapp-reminder-pilot).
+
 ## Architecture
 
 ```mermaid
@@ -358,7 +364,8 @@ src/
   movein-view.ts -- /movein prompts, confirm text, and partial-failure reply text
   moveout.ts    -- /moveout flow: tenancy, end date, confirm, and the tenancy and room updates
   outstanding.ts -- outstanding charge filtering, grouping, and reminder bucket rules
-  reminder.ts    -- Telegram Markdown reminder formatting and message splitting
+  whatsapp.ts    -- signed WhatsApp webhook and private reminder replies
+  reminder.ts    -- shared reminder formatting and channel-specific message splitting
   format.ts     -- amount/date parsing, Melbourne dates, HTTP status extraction, and display formatting
   session.ts    -- KV session helpers
   confirm.ts    -- operation IDs for confirm screens and the Confirm claim

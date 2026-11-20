@@ -35,6 +35,7 @@ new_sqlite_classes = ["ConfirmLock"]
 name = "payment-bot-staging"
 
 [env.staging.vars]
+WHATSAPP_GRAPH_VERSION = "v25.0"
 AIRTABLE_BASE_ID = "appzRYFa1yW5pQDEW"
 
 [[env.staging.kv_namespaces]]
